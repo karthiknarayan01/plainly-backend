@@ -1,0 +1,22 @@
+name: Enforce dev -> main
+
+# Regular feature work merges into `dev` (the default branch); `main` only
+# ever advances via a dev -> main promotion PR. This check fails any PR
+# targeting main whose head isn't dev, so it's visible even though this repo
+# is on a GitHub plan that can't make status checks or reviews *required*
+# (branch protection/rulesets need GitHub Pro/Team for a private repo).
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  check-head-is-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR into main comes from dev
+        run: |
+          if [ "${{ github.event.pull_request.head.ref }}" != "dev" ]; then
+            echo "::error::PRs into main must come from dev (this PR is from '${{ github.event.pull_request.head.ref }}'). Merge into dev first, then open the dev -> main promotion PR."
+            exit 1
+          fi

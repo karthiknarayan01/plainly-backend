@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Env
+.env
+.env.local
+
+# Placeholder until stack is finalized
+__pycache__/
+*.pyc
+.venv/
+node_modules/
