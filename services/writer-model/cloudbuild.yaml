@@ -16,6 +16,14 @@ images:
 options:
   machineType: "E2_HIGHCPU_32"
   diskSizeGb: 300
+  # Cloud Build's legacy default GCS logs bucket only grants access via
+  # primitive-role (Viewer/Owner) ACLs, which the least-privilege deployer
+  # SA doesn't have — CLOUD_LOGGING_ONLY routes logs through Cloud Logging
+  # instead, which respects normal IAM (roles/logging.viewer). Confirmed
+  # by testing: without this, `gcloud builds submit` exits 1 on a
+  # "Viewer/Owner of the project" error even when the build itself
+  # succeeds — this was making CI report false failures.
+  logging: CLOUD_LOGGING_ONLY
 timeout: 7200s
 substitutions:
   _IMAGE: "us-central1-docker.pkg.dev/plainly-backend-440007/plainly/writer-model:latest"

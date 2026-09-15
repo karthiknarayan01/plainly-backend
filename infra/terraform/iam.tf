@@ -60,7 +60,9 @@ resource "google_project_iam_member" "deployer_roles" {
     "roles/cloudsql.admin",
     "roles/artifactregistry.writer",
     "roles/iam.serviceAccountUser",
-    "roles/cloudbuild.builds.editor", # submit/watch builds for writer/judge images — see cloudbuild.tf
+    "roles/cloudbuild.builds.editor",          # submit/watch builds for writer/judge images
+    "roles/serviceusage.serviceUsageConsumer", # gcloud builds submit requires this beyond cloudbuild.builds.editor alone — confirmed by testing (fails with "forbidden from accessing the bucket" otherwise)
+    "roles/storage.admin",                     # gcloud builds submit's source upload needs storage.buckets.get/list on Cloud Build's default staging bucket, which isn't covered by any narrower role — confirmed by testing (bucket-scoped objectAdmin wasn't sufficient)
   ])
   project = var.project_id
   role    = each.value

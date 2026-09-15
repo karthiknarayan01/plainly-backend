@@ -9,6 +9,10 @@ images:
 options:
   machineType: "E2_HIGHCPU_32"
   diskSizeGb: 150
+  # See services/writer-model/cloudbuild.yaml for why this is needed —
+  # avoids the least-privilege deployer SA hitting a false-failure exit
+  # code from gcloud's legacy log-bucket ACL check.
+  logging: CLOUD_LOGGING_ONLY
 timeout: 2400s
 substitutions:
   _IMAGE: "us-central1-docker.pkg.dev/plainly-backend-440007/plainly/judge-model:latest"
