@@ -1,0 +1,51 @@
+id: "003-microsoft-dont-invent-reasons"
+source_type: earnings_statement
+source: eval/sources/microsoft-q4-fy2026.md
+
+original_excerpt: >
+  Revenue was $90.0 billion and increased 18% (up 17% in constant
+  currency). Microsoft Cloud revenue exceeded $214 billion for the full
+  year, up 27%. Azure revenue grew 43% in the quarter, driven by strong
+  demand and efficiency gains, with expectations for continued
+  acceleration in H1 FY27.
+
+good_rewrite: >
+  Microsoft brought in $90.0 billion this quarter, 18% more than the
+  same quarter last year. Strip out the effect of currency exchange
+  rates moving around, and the real growth was 17% — almost the same
+  number, so currency swings barely mattered this time.
+
+  For the full year, Microsoft's cloud business — Azure and related
+  products together — brought in over $214 billion, up 27%. Azure by
+  itself grew 43% just in this quarter. Microsoft says this came from
+  more customers wanting the product and from running it more
+  efficiently, and expects growth to keep speeding up in the first half
+  of next fiscal year.
+
+good_rewrite_rationale: >
+  Explains "constant currency" concretely (what it means and why the 17%
+  vs 18% gap is small here) instead of just naming the term. Keeps every
+  figure (90.0B, 18%, 17%, 214B, 27%, 43%). Critically, for "driven by
+  strong demand and efficiency gains" — the rewrite reports exactly what
+  the original says and no more. It does not invent a specific reason
+  for the efficiency gains, because the source doesn't give one. This is
+  the other half of "explain why, not just what": when the original
+  itself doesn't have more to explain, don't manufacture an explanation
+  that sounds specific but isn't supported.
+
+bad_rewrite: >
+  Microsoft's revenue grew 18% to $90.0 billion. Cloud revenue topped
+  $214 billion for the year. Azure grew 43%, thanks to Microsoft's new
+  AI data center investments and improved chip efficiency, and is
+  expected to keep accelerating.
+
+bad_rewrite_rationale: >
+  Drops the constant-currency figure entirely (loss — the 17% number and
+  its context disappear). More importantly, it invents a specific cause
+  ("new AI data center investments and improved chip efficiency") that
+  is nowhere in the original, which only says "strong demand and
+  efficiency gains" in general terms. That's a gain — a fabricated
+  specific claim dressed up as if it came from the source. This is
+  exactly the failure mode the judge's "gain" check exists to catch: it
+  reads as more informative, which makes it more dangerous than an
+  obviously lazy rewrite, not less.

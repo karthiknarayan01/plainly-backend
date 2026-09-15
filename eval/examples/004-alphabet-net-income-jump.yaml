@@ -1,0 +1,52 @@
+id: "004-alphabet-net-income-jump"
+source_type: earnings_statement
+source: eval/sources/alphabet-q2-2026.md
+
+original_excerpt: >
+  Operating income $40.8 billion (+30% Y/Y); operating margin 34% (+2
+  percentage points). Net income available to common stockholders $112.1
+  billion (+298% Y/Y); diluted EPS $9.11 (+294% Y/Y) — the extraordinary
+  net income jump reflects $98.0 billion in other income, primarily
+  unrealized gains on equity securities.
+
+good_rewrite: >
+  Alphabet's operating income — profit from actually running the
+  business, selling ads and cloud services — was $40.8 billion, up 30%
+  from a year ago. That's the number that tells you how the core
+  business did.
+
+  Net income — profit after everything, including one-time items — was
+  $112.1 billion, up 298%. That jump looks huge, but it's not mostly
+  from the business doing better. $98.0 billion of it came from other
+  income, mostly the rising value of stock Alphabet owns in other
+  companies. Stock prices go up and down, so this kind of gain doesn't
+  repeat every quarter the way ad or cloud revenue does. The 30% operating
+  income growth is the more useful number for judging how the business
+  is actually performing.
+
+good_rewrite_rationale: >
+  This is the central fidelity risk in the excerpt: a reader who only
+  sees "net income up 298%" would badly misjudge how Alphabet's business
+  performed this quarter. The rewrite keeps both numbers (40.8B/30% and
+  112.1B/298%), keeps the $98.0B other-income figure and its source
+  (unrealized equity gains), and does the interpretive work the source
+  flags but doesn't fully spell out — explaining why 298% is the wrong
+  number to focus on and what to look at instead. This is "explain why,
+  not just what" applied to a case where getting it wrong would mislead,
+  not just confuse.
+
+bad_rewrite: >
+  Alphabet had a great quarter. Operating income rose 30% to $40.8
+  billion, and net income shot up 298% to $112.1 billion, showing the
+  company's massive growth. Diluted EPS also jumped 294% to $9.11.
+
+bad_rewrite_rationale: >
+  Technically keeps all four numbers, but frames the 298% net income
+  jump as if it were business growth ("showing the company's massive
+  growth") with no mention of the $98.0 billion one-time equity gain
+  that actually drove it. This drops the single most important piece of
+  context in the excerpt — not a number, but the explanation that makes
+  the numbers mean the right thing — and the confident tone ("great
+  quarter," "massive growth") actively steers the reader toward the
+  wrong conclusion. A loss of context can be as damaging as a loss of
+  fact.

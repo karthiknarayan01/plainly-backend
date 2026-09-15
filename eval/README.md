@@ -14,6 +14,17 @@ One illustrative example (`examples/000-illustrative.yaml`), clearly
 marked as synthetic — written to show the schema working, not as real
 training data. It should not be used for training or scoring.
 
+Five real examples, sourced from the Q2/Q4 2026 SEC 8-K filings indexed
+in `sources/README.md`. Each targets a different failure mode:
+
+| # | Company | Failure mode it targets |
+|---|---------|--------------------------|
+| 001 | NVIDIA | jargon (gross margin) left unexplained |
+| 002 | Tesla | losing a number/qualifier during simplification |
+| 003 | Microsoft | inventing a reason the source doesn't give (fabrication/"gain") |
+| 004 | Alphabet | dropping context that changes what a number means (net income vs. one-time gain) |
+| 005 | Reddit | multiple unexplained terms in one short passage (DAU/WAU/EBITDA) |
+
 ## What's needed to make this real
 
 Real source excerpts from actual earnings statements and technical books
