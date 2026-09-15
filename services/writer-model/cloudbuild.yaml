@@ -1,0 +1,21 @@
+# Built via Cloud Build, not the GitHub Actions runner — the base vLLM
+# image plus ~64GB of Qwen3-32B weights exceeds both GitHub's runner disk
+# and Cloud Build's default disk size (confirmed by testing: the plain
+# `gcloud builds submit --tag` form died silently right as Docker
+# committed the downloaded weights into an image layer, which needs
+# roughly 2x the data's size in scratch space during that step).
+#
+# timeout is 2h: build+download finishes in ~10-15min, but pushing the
+# ~64GB single-layer image is the slow part (a 3600s/60min budget wasn't
+# enough — confirmed by testing, push was still in flight at the deadline).
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-t", "${_IMAGE}", "."]
+images:
+  - "${_IMAGE}"
+options:
+  machineType: "E2_HIGHCPU_32"
+  diskSizeGb: 300
+timeout: 7200s
+substitutions:
+  _IMAGE: "us-central1-docker.pkg.dev/plainly-backend-440007/plainly/writer-model:latest"

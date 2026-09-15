@@ -60,8 +60,23 @@ resource "google_project_iam_member" "deployer_roles" {
     "roles/cloudsql.admin",
     "roles/artifactregistry.writer",
     "roles/iam.serviceAccountUser",
+    "roles/cloudbuild.builds.editor", # submit/watch builds for writer/judge images — see cloudbuild.tf
   ])
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# Cloud Build's own default service account executes the build itself
+# (not the deployer — the deployer only submits/watches it) and needs
+# push access to Artifact Registry.
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
+resource "google_project_iam_member" "cloudbuild_default_sa_artifact_writer" {
+  project    = var.project_id
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+  depends_on = [google_project_service.apis]
 }

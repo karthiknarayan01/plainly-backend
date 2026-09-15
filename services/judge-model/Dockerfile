@@ -8,8 +8,9 @@ FROM vllm/vllm-openai:latest
 ARG MODEL_ID=AtlaAI/Selene-1-Mini-Llama-3.1-8B
 ENV MODEL_ID=${MODEL_ID}
 
-RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('${MODEL_ID}')"
+# The base image only has python3 on PATH, not python.
+RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download('${MODEL_ID}')"
 
-CMD python -m vllm.entrypoints.openai.api_server \
+CMD python3 -m vllm.entrypoints.openai.api_server \
     --model "$MODEL_ID" \
     --port 8000

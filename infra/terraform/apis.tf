@@ -8,6 +8,7 @@ resource "google_project_service" "apis" {
     "iamcredentials.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "artifactregistry.googleapis.com",
+    "cloudbuild.googleapis.com", # writer/judge image builds — GitHub-hosted runners don't have enough disk for the vLLM base image
   ])
   service            = each.value
   disable_on_destroy = false
