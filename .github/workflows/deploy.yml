@@ -32,15 +32,16 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # All four images build first, unconditionally. Deploys run after,
-      # each gated only on its own image build (steps.build_x.outcome),
-      # with if: always() so one service's deploy failure (e.g. worker
-      # crash-looping, or writer/judge still blocked on GPU quota) can't
-      # skip the other, unrelated deploys the way a plain sequential
-      # step failure would.
+      # All four builds and all four deploys are independent of each
+      # other (if: always(), each gated only on its own build's
+      # outcome via steps.build_x.outcome) so one service failing —
+      # writer-model running out of disk, judge/writer still blocked on
+      # GPU quota, worker crash-looping — can't skip or hide whether
+      # the other three succeeded.
 
       - name: Build and push API image
         id: build_api
+        if: always()
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/api:${{ github.sha }}
           docker build -t "$IMAGE" services/api
@@ -49,6 +50,7 @@ jobs:
 
       - name: Build and push worker image
         id: build_worker
+        if: always()
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/worker:${{ github.sha }}
           docker build -t "$IMAGE" services/worker
@@ -57,6 +59,7 @@ jobs:
 
       - name: Build and push writer-model image
         id: build_writer
+        if: always()
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/writer-model:${{ github.sha }}
           docker build -t "$IMAGE" services/writer-model
@@ -65,6 +68,7 @@ jobs:
 
       - name: Build and push judge-model image
         id: build_judge
+        if: always()
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/judge-model:${{ github.sha }}
           docker build -t "$IMAGE" services/judge-model

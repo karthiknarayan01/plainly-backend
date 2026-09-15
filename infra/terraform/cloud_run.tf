@@ -15,8 +15,10 @@ resource "google_cloud_run_v2_service" "api" {
 
   template {
     containers {
-      # Built and pushed by CI — see .github/workflows/deploy.yml.
-      # Placeholder image until the first real build lands.
+      # Placeholder — CI (.github/workflows/deploy.yml) owns the real
+      # image via `gcloud run deploy` after the first build, and
+      # lifecycle.ignore_changes below stops Terraform from fighting it
+      # and reverting back to this placeholder on every unrelated apply.
       image = "us-docker.pkg.dev/cloudrun/container/hello"
       env {
         name  = "DATABASE_HOST"
@@ -27,6 +29,10 @@ resource "google_cloud_run_v2_service" "api" {
       min_instance_count = 0 # scales to zero between jobs
       max_instance_count = 5
     }
+  }
+
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
   }
 
   depends_on = [google_project_service.apis]
@@ -57,6 +63,10 @@ resource "google_cloud_run_v2_service" "worker" {
       min_instance_count = 1 # at least one worker running to poll the queue
       max_instance_count = 5
     }
+  }
+
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
   }
 
   depends_on = [google_project_service.apis]

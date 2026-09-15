@@ -34,6 +34,10 @@ resource "google_cloud_run_v2_service" "writer_model" {
     # this doesn't fix that one) more likely to be granted quickly.
     gpu_zonal_redundancy_disabled = true
   }
+
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service" "judge_model" {
@@ -62,6 +66,10 @@ resource "google_cloud_run_v2_service" "judge_model" {
       max_instance_count = 1 # reduced from 2 — regional Cloud Run CPU/memory quota on this new project doesn't have room for more yet
     }
     gpu_zonal_redundancy_disabled = true
+  }
+
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
   }
 }
 
