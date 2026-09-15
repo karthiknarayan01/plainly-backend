@@ -50,14 +50,11 @@ resource "google_cloud_run_v2_service" "worker" {
         name  = "DATABASE_HOST"
         value = google_sql_database_instance.main.connection_name
       }
-      env {
-        name  = "WRITING_MODEL_ENDPOINT"
-        value = google_cloud_run_v2_service.writer_model.uri
-      }
-      env {
-        name  = "JUDGE_MODEL_ENDPOINT"
-        value = google_cloud_run_v2_service.judge_model.uri
-      }
+      # Writer/judge models now come from OpenRouter (hosted, pay-per-token)
+      # instead of self-hosted Cloud Run GPU services — no more per-model
+      # endpoint URLs. Whatever OpenRouter API key/model config the worker
+      # needs is a follow-up (likely a Secret Manager-backed env var), not
+      # yet wired up here.
     }
     scaling {
       min_instance_count = 1 # at least one worker running to poll the queue

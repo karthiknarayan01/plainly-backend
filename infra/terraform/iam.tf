@@ -16,8 +16,7 @@ resource "google_service_account" "deployer" {
 
 # Runtime identity for the worker service — separate from the deployer.
 # The deployer's job is to push new revisions; this is what the worker
-# actually runs as, and it's the identity that needs run.invoker on the
-# two inference services (see inference.tf).
+# actually runs as.
 resource "google_service_account" "worker_runtime" {
   account_id   = "plainly-worker-runtime"
   display_name = "Plainly Worker Runtime"
@@ -60,25 +59,8 @@ resource "google_project_iam_member" "deployer_roles" {
     "roles/cloudsql.admin",
     "roles/artifactregistry.writer",
     "roles/iam.serviceAccountUser",
-    "roles/cloudbuild.builds.editor",          # submit/watch builds for writer/judge images
-    "roles/serviceusage.serviceUsageConsumer", # gcloud builds submit requires this beyond cloudbuild.builds.editor alone — confirmed by testing (fails with "forbidden from accessing the bucket" otherwise)
-    "roles/storage.admin",                     # gcloud builds submit's source upload needs storage.buckets.get/list on Cloud Build's default staging bucket, which isn't covered by any narrower role — confirmed by testing (bucket-scoped objectAdmin wasn't sufficient)
   ])
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.deployer.email}"
-}
-
-# Cloud Build's own default service account executes the build itself
-# (not the deployer — the deployer only submits/watches it) and needs
-# push access to Artifact Registry.
-data "google_project" "current" {
-  project_id = var.project_id
-}
-
-resource "google_project_iam_member" "cloudbuild_default_sa_artifact_writer" {
-  project    = var.project_id
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
-  depends_on = [google_project_service.apis]
 }

@@ -32,12 +32,10 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # All four builds and all four deploys are independent of each
-      # other (if: always(), each gated only on its own build's
-      # outcome via steps.build_x.outcome) so one service failing —
-      # writer-model running out of disk, judge/writer still blocked on
-      # GPU quota, worker crash-looping — can't skip or hide whether
-      # the other three succeeded.
+      # Both builds and both deploys are independent of each other
+      # (if: always(), each deploy gated only on its own build's outcome
+      # via steps.build_x.outcome) so one service failing can't skip or
+      # hide whether the other succeeded.
 
       - name: Build and push API image
         id: build_api
@@ -57,40 +55,6 @@ jobs:
           docker push "$IMAGE"
           echo "WORKER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      # writer-model and judge-model build via Cloud Build, not locally —
-      # the base vLLM image plus baked-in model weights (~64GB for the
-      # writer) exceeds the GitHub-hosted runner's disk. Confirmed by
-      # testing directly against this project: local docker build fails
-      # with "no space left on device" partway through just extracting
-      # the base image; Cloud Build (services/*/cloudbuild.yaml — bigger
-      # disk, bigger machine, longer timeout for the push) succeeds.
-
-      - name: Build and push writer-model image (Cloud Build)
-        id: build_writer
-        if: always()
-        run: |
-          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/writer-model:${{ github.sha }}
-          cd services/writer-model
-          gcloud builds submit \
-            --project="${{ env.PROJECT_ID }}" \
-            --config=cloudbuild.yaml \
-            --substitutions="_IMAGE=$IMAGE" \
-            .
-          echo "WRITER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
-
-      - name: Build and push judge-model image (Cloud Build)
-        id: build_judge
-        if: always()
-        run: |
-          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/judge-model:${{ github.sha }}
-          cd services/judge-model
-          gcloud builds submit \
-            --project="${{ env.PROJECT_ID }}" \
-            --config=cloudbuild.yaml \
-            --substitutions="_IMAGE=$IMAGE" \
-            .
-          echo "JUDGE_IMAGE=$IMAGE" >> "$GITHUB_ENV"
-
       - name: Deploy API to Cloud Run
         if: always() && steps.build_api.outcome == 'success'
         run: |
@@ -104,21 +68,5 @@ jobs:
         run: |
           gcloud run deploy plainly-worker \
             --image="$WORKER_IMAGE" \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-
-      - name: Deploy writer-model to Cloud Run
-        if: always() && steps.build_writer.outcome == 'success'
-        run: |
-          gcloud run deploy plainly-writer-model \
-            --image="$WRITER_IMAGE" \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-
-      - name: Deploy judge-model to Cloud Run
-        if: always() && steps.build_judge.outcome == 'success'
-        run: |
-          gcloud run deploy plainly-judge-model \
-            --image="$JUDGE_IMAGE" \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"

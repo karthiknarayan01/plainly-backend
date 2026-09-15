@@ -32,10 +32,18 @@ prompts/            system prompts for the writing model and the judge model
 eval/                (original, good rewrite, bad rewrite, why) examples —
                      used both as DPO training data and as the held-out
                      benchmark for comparing model/prompt changes.
-                     run_eval.py runs the actual calibrate/benchmark
-                     checks against the deployed writer/judge models.
-infra/terraform/    GCP infra: Cloud SQL, Cloud Run, the GPU inference box, IAM/WIF
+                     run_eval.py runs the actual calibrate/benchmark checks.
+infra/terraform/    GCP infra: Cloud SQL, Cloud Run (api + worker only), IAM/WIF
 ```
+
+Writer and judge models are hosted via OpenRouter (pay-per-token), not
+self-hosted — no GPU infra in this repo. Earlier this project ran writer/
+judge as self-hosted Cloud Run GPU services (Qwen3-32B + a fine-tuned
+judge model), but that needed GCP GPU quota approval and cost hundreds to
+thousands of dollars/month to keep warm, which doesn't fit this project's
+experimental scope. `eval/run_eval.py`'s endpoint config still needs
+updating to point at OpenRouter instead of the old Cloud Run URLs — not
+done yet.
 
 Full architecture (diagrams, schema, API surface, the generate→judge→retry
 quality gate): see the design doc — ask for the link if you don't have it.

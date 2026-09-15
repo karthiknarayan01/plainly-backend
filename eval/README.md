@@ -65,26 +65,18 @@ python eval/run_eval.py calibrate
 python eval/run_eval.py benchmark
 ```
 
-Both need `WRITING_MODEL_ENDPOINT` (benchmark only) and
-`JUDGE_MODEL_ENDPOINT` set — the same Cloud Run URLs the worker service
-uses (`infra/terraform/outputs.tf`), or pass `--writer-endpoint`/
-`--judge-endpoint` directly. Useful flags: `--only 006` (id prefix),
-`--limit 3`, `--out path.json`.
-
-**Auth**: the writer/judge Cloud Run services aren't public — only the
-worker's service account can call them by default. To run this from your
-own machine, set `eval_operator_email` in `infra/terraform/terraform.tfvars`
-to your Google account email and `terraform apply` — this grants just
-that one identity `run.invoker` on both services. The script then
-fetches an identity token automatically via `gcloud auth
-print-identity-token`.
-
-**What's left before this can actually run**: the writer/judge Cloud Run
-services still need to deploy for real (blocked on the GCP GPU quota
-requests — see the main repo status) and the CI pipeline needs to push a
-real image instead of the `hello` placeholder. The script itself is
-ready and unit-tested against the prompt files and example schema; it
-just has nothing live to call yet.
+**Status: endpoint config is stale.** This project no longer self-hosts
+the writer/judge models on Cloud Run GPU (too expensive/slow to get GPU
+quota approved for an experimental project — see the main README).
+Writer and judge now come from OpenRouter (hosted, pay-per-token)
+instead, but `run_eval.py` still expects `--writer-endpoint`/
+`--judge-endpoint` pointing at Cloud Run URLs plus `gcloud`-based
+identity-token auth. That auth path and the GCP-specific endpoint
+plumbing need to be swapped for a plain OpenRouter base URL + API key
+before this script will actually run — not done yet. The
+calibrate/benchmark logic itself (load examples, call writer, call
+judge, score) doesn't need to change, just how the two model clients
+are constructed.
 
 ## Split
 
