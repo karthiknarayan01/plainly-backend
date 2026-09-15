@@ -23,11 +23,25 @@ Primary focus areas:
    laypeople are highest.
 2. Technical books and manuals more broadly.
 
+## Structure
+
+```
+services/api/      FastAPI app — job creation, status, SSE stream (stub for now)
+services/worker/    claims jobs, runs the generate→judge→retry loop (stub for now)
+prompts/            system prompts for the writing model and the judge model
+eval/                (original, good rewrite, bad rewrite, why) examples —
+                     used both as DPO training data and as the held-out
+                     benchmark for comparing model/prompt changes
+infra/terraform/    GCP infra: Cloud SQL, Cloud Run, the GPU inference box, IAM/WIF
+```
+
+Full architecture (diagrams, schema, API surface, the generate→judge→retry
+quality gate): see the design doc — ask for the link if you don't have it.
+
 ## Status
 
-Early stage — this repo was just created. Stack, the rewrite pipeline
-architecture, and how fidelity to the original is verified are still to be
-worked out.
+Infra and prompts scaffolded. Real API/worker logic (the actual job
+handling and the generate→judge→retry loop) is the next piece of work.
 
 `dev` is the default/live branch; `main` only ever advances via a dev →
 main promotion PR (see `.github/workflows/enforce-dev-to-main.yml`).

@@ -1,0 +1,69 @@
+# API and worker layers — the design doc's "N replicas" for each. Cloud
+# Run gives an HTTPS URL automatically, so no custom load balancer is
+# needed for v1 (§06 of the design doc simplifies to this on purpose).
+
+resource "google_artifact_registry_repository" "images" {
+  location      = var.region
+  repository_id = "plainly"
+  format        = "DOCKER"
+  depends_on    = [google_project_service.apis]
+}
+
+resource "google_cloud_run_v2_service" "api" {
+  name     = "plainly-api"
+  location = var.region
+
+  template {
+    containers {
+      # Built and pushed by CI — see .github/workflows/deploy.yml.
+      # Placeholder image until the first real build lands.
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
+      env {
+        name  = "DATABASE_HOST"
+        value = google_sql_database_instance.main.connection_name
+      }
+    }
+    scaling {
+      min_instance_count = 0 # scales to zero between jobs
+      max_instance_count = 5
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_run_v2_service" "worker" {
+  name     = "plainly-worker"
+  location = var.region
+
+  template {
+    containers {
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
+      env {
+        name  = "DATABASE_HOST"
+        value = google_sql_database_instance.main.connection_name
+      }
+      env {
+        name  = "WRITING_MODEL_ENDPOINT"
+        value = "http://${google_compute_instance.inference.network_interface[0].network_ip}:8000"
+      }
+      env {
+        name  = "JUDGE_MODEL_ENDPOINT"
+        value = "http://${google_compute_instance.inference.network_interface[0].network_ip}:8001"
+      }
+    }
+    scaling {
+      min_instance_count = 1 # at least one worker running to poll the queue
+      max_instance_count = 5
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "api_public" {
+  name     = google_cloud_run_v2_service.api.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
