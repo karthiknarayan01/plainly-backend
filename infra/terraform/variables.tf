@@ -39,9 +39,19 @@ variable "writer_gpu_type" {
 }
 
 variable "judge_gpu_type" {
-  # The judge (8B) is comfortable on the cheaper L4 (24GB) — it only ever
-  # sees one passage pair at a time, not a whole cached document, so its
-  # memory needs are much smaller than the writer's.
+  # The judge (8B) only needs the cheaper L4 (24GB) — it only ever sees
+  # one passage pair at a time, not a whole cached document, so 8 vCPU /
+  # 32Gi (already under the current 40Gi/20vCPU region caps) is enough.
+  #
+  # Considered switching to RTX PRO 6000 to dodge the pending L4 GPU
+  # quota approval (this project has 0 L4 quota but 3 free RTX PRO 6000
+  # GPUs by default) — doesn't actually work. Confirmed by testing: Cloud
+  # Run enforces a fixed CPU/memory pairing per GPU type, and for RTX PRO
+  # 6000 the floor is 20 vCPU / exactly 80Gi, regardless of what the
+  # workload needs. That hits the exact same memory-quota wall as the
+  # writer, for no benefit — L4's actual blocker (GPU count = 0) is the
+  # smaller, more normal ask, so staying on L4 and waiting on that
+  # approval is the better bet.
   type    = string
   default = "nvidia-l4"
 }
