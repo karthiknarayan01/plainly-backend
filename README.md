@@ -31,7 +31,9 @@ services/worker/    claims jobs, runs the generate→judge→retry loop (stub fo
 prompts/            system prompts for the writing model and the judge model
 eval/                (original, good rewrite, bad rewrite, why) examples —
                      used both as DPO training data and as the held-out
-                     benchmark for comparing model/prompt changes
+                     benchmark for comparing model/prompt changes.
+                     run_eval.py runs the actual calibrate/benchmark
+                     checks against the deployed writer/judge models.
 infra/terraform/    GCP infra: Cloud SQL, Cloud Run, the GPU inference box, IAM/WIF
 ```
 

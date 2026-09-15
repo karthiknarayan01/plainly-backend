@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""Eval runner for Plainly's writing/judge models.
+
+Two modes:
+
+  calibrate   Sanity-checks the judge model itself. For every example in
+              eval/examples/, this sends the judge the original_excerpt
+              paired with the hand-labeled good_rewrite, then again paired
+              with the hand-labeled bad_rewrite, and checks the judge
+              approves the good one and rejects the bad one. If the judge
+              can't tell our own good example from our own bad one, it
+              can't be trusted to grade anything else — run this first.
+
+  benchmark   The real eval. Runs original_excerpt through the writing
+              model to get a fresh rewrite, then has the judge score that
+              fresh output. Reports an approval rate and per-example
+              detail, and writes a JSON report so runs can be compared
+              over time (e.g. after a prompt or model change).
+
+Usage:
+  python eval/run_eval.py calibrate
+  python eval/run_eval.py benchmark
+  python eval/run_eval.py benchmark --only 001 --out eval/results/run1.json
+
+Endpoints come from WRITING_MODEL_ENDPOINT / JUDGE_MODEL_ENDPOINT (the
+same env vars the worker service uses, see infra/terraform/cloud_run.tf)
+or the --writer-endpoint / --judge-endpoint flags.
+
+Auth: if an endpoint is a Cloud Run https URL, an identity token is
+fetched automatically via `gcloud auth print-identity-token
+--audiences=<endpoint>`. This only works if your own gcloud identity has
+been granted roles/run.invoker on the writer/judge services (see the
+eval_operator_email Terraform variable in infra/terraform/variables.tf).
+Set PLAINLY_EVAL_ID_TOKEN to override with your own token instead.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+import yaml
+from openai import OpenAI
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+EXAMPLES_DIR = SCRIPT_DIR / "examples"
+RESULTS_DIR = SCRIPT_DIR / "results"
+PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
+
+REQUEST_TIMEOUT_SECONDS = 600  # scale-to-zero Cloud Run GPU cold starts can be slow
+
+
+def load_prompt(path: Path) -> str:
+    """Strip the leading '# Title' + '> Status: ...' header, keep the rest."""
+    text = path.read_text(encoding="utf-8")
+    marker = "\n---\n"
+    idx = text.find(marker)
+    if idx != -1:
+        return text[idx + len(marker):].strip()
+    return text.strip()
+
+
+def load_examples(only: Optional[str], limit: Optional[int]) -> list[dict]:
+    examples = []
+    for f in sorted(EXAMPLES_DIR.glob("*.yaml")):
+        data = yaml.safe_load(f.read_text(encoding="utf-8"))
+        if data["id"].startswith("000-"):
+            continue  # synthetic, format-illustration only — never scored
+        if only and not data["id"].startswith(only):
+            continue
+        examples.append(data)
+    if limit:
+        examples = examples[:limit]
+    if not examples:
+        raise SystemExit("no eval examples matched — check --only/--limit")
+    return examples
+
+
+def get_id_token(endpoint: str) -> Optional[str]:
+    override = os.environ.get("PLAINLY_EVAL_ID_TOKEN")
+    if override:
+        return override
+    if not endpoint.startswith("https://"):
+        return None  # local/plain-HTTP endpoint — assume no Cloud Run IAM in front of it
+    try:
+        result = subprocess.run(
+            ["gcloud", "auth", "print-identity-token", f"--audiences={endpoint}"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        return result.stdout.strip()
+    except Exception as exc:  # noqa: BLE001 — surfaced as a warning, not fatal
+        print(
+            f"warning: could not fetch an identity token for {endpoint} ({exc}); "
+            f"requests will go out unauthenticated and likely fail with 403. "
+            f"See --help for the eval_operator_email Terraform variable.",
+            file=sys.stderr,
+        )
+        return None
+
+
+def make_client(endpoint: str) -> OpenAI:
+    token = get_id_token(endpoint)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return OpenAI(
+        base_url=f"{endpoint.rstrip('/')}/v1",
+        api_key="unused",  # vLLM's OpenAI-compatible server doesn't check this
+        default_headers=headers,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+
+
+def discover_model(client: OpenAI, label: str) -> str:
+    models = client.models.list()
+    if not models.data:
+        raise SystemExit(f"{label} endpoint returned no models — is the container actually up?")
+    return models.data[0].id
+
+
+def build_writer_user_message(example: dict) -> str:
+    kind = "earnings statement" if example["source_type"] == "earnings_statement" else "technical book chapter"
+    return (
+        f"Below is an excerpt from a {kind}. Treat it as the full document and "
+        f"the full page range to rewrite this turn — it's a single, "
+        f"self-contained passage, not a multi-page document, and this is a "
+        f"first attempt (no prior feedback).\n\n"
+        f"---\n{example['original_excerpt'].strip()}\n---\n\n"
+        f"Produce your rewrite of this passage now."
+    )
+
+
+def build_judge_user_message(original_excerpt: str, rewrite: str) -> str:
+    return (
+        f"Original passage:\n---\n{original_excerpt.strip()}\n---\n\n"
+        f"Rewritten version:\n---\n{rewrite.strip()}\n---\n\n"
+        f"Evaluate the rewrite."
+    )
+
+
+def call_writer(client: OpenAI, model: str, example: dict) -> str:
+    system_prompt = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": build_writer_user_message(example)},
+        ],
+        temperature=0.3,
+    )
+    return resp.choices[0].message.content.strip()
+
+
+def parse_judge_json(raw: str) -> dict:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+    raise ValueError(f"judge did not return valid JSON:\n{raw}")
+
+
+def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) -> dict:
+    system_prompt = load_prompt(PROMPTS_DIR / "judge_model_system_prompt.md")
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": build_judge_user_message(original_excerpt, rewrite)},
+    ]
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.0,
+            response_format={"type": "json_object"},
+        )
+    except Exception:
+        # older/other server builds may not support response_format — the
+        # prompt itself demands JSON, so fall back to parsing that instead.
+        resp = client.chat.completions.create(model=model, messages=messages, temperature=0.0)
+    return parse_judge_json(resp.choices[0].message.content)
+
+
+def violation_count(judge_result: dict) -> int:
+    total = 0
+    for key in ("loss", "gain", "distortion", "confusing_terms"):
+        value = judge_result.get(key, [])
+        if isinstance(value, list):
+            total += len(value)
+        elif value and str(value).strip().lower() not in ("none", ""):
+            total += 1
+    return total
+
+
+def write_report(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def default_report_path(mode: str) -> Path:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return RESULTS_DIR / f"{ts}-{mode}.json"
+
+
+def run_calibrate(args: argparse.Namespace) -> int:
+    judge_endpoint = args.judge_endpoint or os.environ.get("JUDGE_MODEL_ENDPOINT")
+    if not judge_endpoint:
+        raise SystemExit("no judge endpoint — pass --judge-endpoint or set JUDGE_MODEL_ENDPOINT")
+
+    judge_client = make_client(judge_endpoint)
+    judge_model = discover_model(judge_client, "judge")
+    examples = load_examples(args.only, args.limit)
+
+    results = []
+    passed = 0
+    for ex in examples:
+        print(f"[{ex['id']}] judging good_rewrite...", flush=True)
+        good = call_judge(judge_client, judge_model, ex["original_excerpt"], ex["good_rewrite"])
+        print(f"[{ex['id']}] judging bad_rewrite...", flush=True)
+        bad = call_judge(judge_client, judge_model, ex["original_excerpt"], ex["bad_rewrite"])
+
+        good_ok = bool(good.get("approved")) and violation_count(good) == 0
+        bad_ok = not bool(bad.get("approved"))
+        example_pass = good_ok and bad_ok
+
+        status = "PASS" if example_pass else "FAIL"
+        print(
+            f"[{ex['id']}] {status}"
+            f" (good: approved={good.get('approved')} violations={violation_count(good)};"
+            f" bad: approved={bad.get('approved')} violations={violation_count(bad)})"
+        )
+        if not example_pass:
+            print(f"    good verdict: {good.get('verdict_reason')}")
+            print(f"    bad verdict:  {bad.get('verdict_reason')}")
+
+        results.append({"id": ex["id"], "pass": example_pass, "good": good, "bad": bad})
+        passed += int(example_pass)
+
+    print(f"\nCalibration: {passed}/{len(examples)} examples passed.")
+
+    out_path = Path(args.out) if args.out else default_report_path("calibrate")
+    write_report(out_path, {"mode": "calibrate", "judge_model": judge_model, "results": results})
+    print(f"Report written to {out_path}")
+
+    return 0 if passed == len(examples) else 1
+
+
+def run_benchmark(args: argparse.Namespace) -> int:
+    writer_endpoint = args.writer_endpoint or os.environ.get("WRITING_MODEL_ENDPOINT")
+    judge_endpoint = args.judge_endpoint or os.environ.get("JUDGE_MODEL_ENDPOINT")
+    if not writer_endpoint:
+        raise SystemExit("no writer endpoint — pass --writer-endpoint or set WRITING_MODEL_ENDPOINT")
+    if not judge_endpoint:
+        raise SystemExit("no judge endpoint — pass --judge-endpoint or set JUDGE_MODEL_ENDPOINT")
+
+    writer_client = make_client(writer_endpoint)
+    judge_client = make_client(judge_endpoint)
+    writer_model = discover_model(writer_client, "writer")
+    judge_model = discover_model(judge_client, "judge")
+    examples = load_examples(args.only, args.limit)
+
+    results = []
+    approved_count = 0
+    for ex in examples:
+        print(f"[{ex['id']}] generating rewrite...", flush=True)
+        fresh_rewrite = call_writer(writer_client, writer_model, ex)
+        print(f"[{ex['id']}] judging...", flush=True)
+        judge_result = call_judge(judge_client, judge_model, ex["original_excerpt"], fresh_rewrite)
+
+        approved = bool(judge_result.get("approved"))
+        vcount = violation_count(judge_result)
+        approved_count += int(approved)
+
+        print(f"[{ex['id']}] {'APPROVED' if approved else 'REJECTED'} (violations={vcount})")
+        if not approved:
+            print(f"    verdict: {judge_result.get('verdict_reason')}")
+
+        results.append(
+            {
+                "id": ex["id"],
+                "approved": approved,
+                "violation_count": vcount,
+                "fresh_rewrite": fresh_rewrite,
+                "judge_result": judge_result,
+                "reference_good_rewrite": ex["good_rewrite"],
+            }
+        )
+
+    n = len(examples)
+    avg_violations = sum(r["violation_count"] for r in results) / n if n else 0.0
+    approval_rate = approved_count / n if n else 0.0
+    print(f"\nBenchmark: {approved_count}/{n} approved ({approval_rate:.0%}). Avg violations: {avg_violations:.2f}")
+
+    report = {
+        "mode": "benchmark",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "writer_model": writer_model,
+        "judge_model": judge_model,
+        "approval_rate": approval_rate,
+        "avg_violations": avg_violations,
+        "results": results,
+    }
+    out_path = Path(args.out) if args.out else default_report_path("benchmark")
+    write_report(out_path, report)
+    print(f"Report written to {out_path}")
+
+    return 0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--only", default=None, help="only run examples whose id starts with this prefix, e.g. 00 or 006")
+    common.add_argument("--limit", type=int, default=None, help="only run the first N matching examples")
+    common.add_argument("--out", default=None, help="path to write the JSON report (default: eval/results/<timestamp>-<mode>.json)")
+
+    cal = sub.add_parser("calibrate", parents=[common], help="check the judge model against hand-labeled good/bad pairs")
+    cal.add_argument("--judge-endpoint", default=None)
+
+    bench = sub.add_parser("benchmark", parents=[common], help="run the writing model + judge model against the eval set")
+    bench.add_argument("--writer-endpoint", default=None)
+    bench.add_argument("--judge-endpoint", default=None)
+
+    args = parser.parse_args()
+    if args.command == "calibrate":
+        sys.exit(run_calibrate(args))
+    else:
+        sys.exit(run_benchmark(args))
+
+
+if __name__ == "__main__":
+    main()

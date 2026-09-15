@@ -80,3 +80,22 @@ resource "google_cloud_run_v2_service_iam_member" "judge_invoker" {
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.worker_runtime.email}"
 }
+
+# Lets eval/run_eval.py call the model services directly from a human's
+# machine (via `gcloud auth print-identity-token`), without making either
+# service public. Only created if eval_operator_email is set.
+resource "google_cloud_run_v2_service_iam_member" "writer_invoker_eval_operator" {
+  count    = var.eval_operator_email != "" ? 1 : 0
+  name     = google_cloud_run_v2_service.writer_model.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "user:${var.eval_operator_email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "judge_invoker_eval_operator" {
+  count    = var.eval_operator_email != "" ? 1 : 0
+  name     = google_cloud_run_v2_service.judge_model.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "user:${var.eval_operator_email}"
+}

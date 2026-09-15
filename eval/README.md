@@ -51,6 +51,41 @@ For each real excerpt, we need:
 See `examples/000-illustrative.yaml` for the exact shape. One file per
 example, sequentially numbered.
 
+## Running the eval — `run_eval.py`
+
+```
+pip install -r eval/requirements.txt
+
+# 1. Calibration — does the judge model agree with our own good/bad labels?
+#    Run this first. If it fails, the judge can't be trusted for anything else.
+python eval/run_eval.py calibrate
+
+# 2. Benchmark — the real eval. Runs the writing model on each
+#    original_excerpt, then has the judge score the fresh output.
+python eval/run_eval.py benchmark
+```
+
+Both need `WRITING_MODEL_ENDPOINT` (benchmark only) and
+`JUDGE_MODEL_ENDPOINT` set — the same Cloud Run URLs the worker service
+uses (`infra/terraform/outputs.tf`), or pass `--writer-endpoint`/
+`--judge-endpoint` directly. Useful flags: `--only 006` (id prefix),
+`--limit 3`, `--out path.json`.
+
+**Auth**: the writer/judge Cloud Run services aren't public — only the
+worker's service account can call them by default. To run this from your
+own machine, set `eval_operator_email` in `infra/terraform/terraform.tfvars`
+to your Google account email and `terraform apply` — this grants just
+that one identity `run.invoker` on both services. The script then
+fetches an identity token automatically via `gcloud auth
+print-identity-token`.
+
+**What's left before this can actually run**: the writer/judge Cloud Run
+services still need to deploy for real (blocked on the GCP GPU quota
+requests — see the main repo status) and the CI pipeline needs to push a
+real image instead of the `hello` placeholder. The script itself is
+ready and unit-tested against the prompt files and example schema; it
+just has nothing live to call yet.
+
 ## Split
 
 Once there are enough real examples (rule of thumb: aim for at least

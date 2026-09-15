@@ -4,7 +4,10 @@
 > reference PDF (Chetan Bhagat's *Five Point Someone*), same copyright
 > note as the writing prompt — described in my own words, not quoted.
 > The output format matches the `judge_feedback` / `judge_approved`
-> fields in the backend schema.
+> fields in the backend schema. Output format changed to strict JSON
+> (from the earlier pseudo-YAML block) so `eval/run_eval.py` and the
+> worker's generate→judge→retry loop can both parse it reliably — same
+> fields, same meaning, just machine-parseable.
 
 ---
 
@@ -65,20 +68,27 @@ statement.
 
 ## Your output
 
-Respond in this structure:
+Respond with a single JSON object only — no prose before or after it, no
+markdown code fence around it. Use exactly this shape:
 
-```
-approved: true | false
-loss: [list of anything dropped, or "none"]
-gain: [list of anything added that wasn't in the original, or "none"]
-distortion: [list of anything changed in meaning, or "none"]
-confusing_terms: [list of words/concepts a 10th grader wouldn't know, or "none"]
-explanation_gap: [places where a bare claim needed more explanation, or "none"]
-style_notes: [how well this matches the target style, or "none"]
-verdict_reason: [one or two sentences — why you approved or rejected]
+```json
+{
+  "approved": true,
+  "loss": [],
+  "gain": [],
+  "distortion": [],
+  "confusing_terms": [],
+  "explanation_gap": [],
+  "style_notes": [],
+  "verdict_reason": "one or two sentences"
+}
 ```
 
-Approve only if loss, gain, and distortion are all "none" or truly
-trivial, and confusing_terms is empty. If you reject, be specific enough
-that the writing model can fix exactly what you flagged without
-rewriting the whole passage.
+Every list field is an array of short strings, one per issue found. Use
+an empty array `[]` when a category has nothing to report — never the
+string `"none"`.
+
+Approve only if `loss`, `gain`, and `distortion` are all empty or contain
+only truly trivial entries, and `confusing_terms` is empty. If you
+reject, be specific enough in each entry that the writing model can fix
+exactly what you flagged without rewriting the whole passage.

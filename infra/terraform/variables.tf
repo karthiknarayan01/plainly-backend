@@ -45,3 +45,15 @@ variable "judge_gpu_type" {
   type    = string
   default = "nvidia-l4"
 }
+
+variable "eval_operator_email" {
+  # Normally only the worker's own service account can invoke the writer/
+  # judge Cloud Run services (see writer_invoker/judge_invoker in
+  # inference.tf) — the model services aren't public. eval/run_eval.py
+  # needs to call them directly from a human's machine, so set this to
+  # your own Google account email (in the gitignored terraform.tfvars,
+  # not here) to grant just that one identity run.invoker too. Leave
+  # empty to skip — no eval_operator grants are created by default.
+  type    = string
+  default = ""
+}

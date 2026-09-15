@@ -18,3 +18,6 @@ node_modules/
 *.tfstate.*
 *.tfvars
 tfplan
+
+# Eval run output — reproducible from eval/run_eval.py, not source
+eval/results/
