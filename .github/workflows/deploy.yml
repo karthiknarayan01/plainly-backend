@@ -32,7 +32,15 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
+      # All four images build first, unconditionally. Deploys run after,
+      # each gated only on its own image build (steps.build_x.outcome),
+      # with if: always() so one service's deploy failure (e.g. worker
+      # crash-looping, or writer/judge still blocked on GPU quota) can't
+      # skip the other, unrelated deploys the way a plain sequential
+      # step failure would.
+
       - name: Build and push API image
+        id: build_api
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/api:${{ github.sha }}
           docker build -t "$IMAGE" services/api
@@ -40,27 +48,15 @@ jobs:
           echo "API_IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
       - name: Build and push worker image
+        id: build_worker
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/worker:${{ github.sha }}
           docker build -t "$IMAGE" services/worker
           docker push "$IMAGE"
           echo "WORKER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      - name: Deploy API to Cloud Run
-        run: |
-          gcloud run deploy plainly-api \
-            --image="$API_IMAGE" \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-
-      - name: Deploy worker to Cloud Run
-        run: |
-          gcloud run deploy plainly-worker \
-            --image="$WORKER_IMAGE" \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-
       - name: Build and push writer-model image
+        id: build_writer
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/writer-model:${{ github.sha }}
           docker build -t "$IMAGE" services/writer-model
@@ -68,13 +64,31 @@ jobs:
           echo "WRITER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
       - name: Build and push judge-model image
+        id: build_judge
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/judge-model:${{ github.sha }}
           docker build -t "$IMAGE" services/judge-model
           docker push "$IMAGE"
           echo "JUDGE_IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
+      - name: Deploy API to Cloud Run
+        if: always() && steps.build_api.outcome == 'success'
+        run: |
+          gcloud run deploy plainly-api \
+            --image="$API_IMAGE" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Deploy worker to Cloud Run
+        if: always() && steps.build_worker.outcome == 'success'
+        run: |
+          gcloud run deploy plainly-worker \
+            --image="$WORKER_IMAGE" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+
       - name: Deploy writer-model to Cloud Run
+        if: always() && steps.build_writer.outcome == 'success'
         run: |
           gcloud run deploy plainly-writer-model \
             --image="$WRITER_IMAGE" \
@@ -82,6 +96,7 @@ jobs:
             --project="${{ env.PROJECT_ID }}"
 
       - name: Deploy judge-model to Cloud Run
+        if: always() && steps.build_judge.outcome == 'success'
         run: |
           gcloud run deploy plainly-judge-model \
             --image="$JUDGE_IMAGE" \
