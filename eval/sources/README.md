@@ -21,3 +21,14 @@ step.
 
 SpaceX is not included — it's privately held and doesn't file public
 earnings statements.
+
+## Technical-book source
+
+For the book side of the eval set, the user provided the original text and
+a user-commissioned simplified rewrite of Chapter 1 ("Introduction to
+Building AI Applications with Foundation Models") of *AI Engineering* by
+Chip Huyen (O'Reilly, 2024) — a copyrighted commercial book, unlike the
+public SEC filings above. Following the same handling used for the
+Chetan Bhagat style reference: only short excerpts (a few paragraphs) are
+quoted into `eval/examples/*.yaml` for comparison purposes, never the full
+chapter, and the full source PDFs are not committed to this repo.
