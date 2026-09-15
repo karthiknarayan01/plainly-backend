@@ -28,6 +28,11 @@ resource "google_cloud_run_v2_service" "writer_model" {
       min_instance_count = 0 # scale to zero — this is the whole point
       max_instance_count = 1 # reduced from 2 — regional Cloud Run CPU/memory quota on this new project doesn't have room for more yet
     }
+    # Zonal-redundant GPU quota is a separate, harder-to-get approval —
+    # not needed for a single-region, non-HA-critical v1 anyway. Also
+    # makes the pending memory-quota increase (still needed regardless —
+    # this doesn't fix that one) more likely to be granted quickly.
+    gpu_zonal_redundancy_disabled = true
   }
 }
 
@@ -56,6 +61,7 @@ resource "google_cloud_run_v2_service" "judge_model" {
       min_instance_count = 0
       max_instance_count = 1 # reduced from 2 — regional Cloud Run CPU/memory quota on this new project doesn't have room for more yet
     }
+    gpu_zonal_redundancy_disabled = true
   }
 }
 
