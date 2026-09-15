@@ -6,8 +6,12 @@ output "db_connection_name" {
   value = google_sql_database_instance.main.connection_name
 }
 
-output "inference_internal_ip" {
-  value = google_compute_instance.inference.network_interface[0].network_ip
+output "writer_model_url" {
+  value = google_cloud_run_v2_service.writer_model.uri
+}
+
+output "judge_model_url" {
+  value = google_cloud_run_v2_service.judge_model.uri
 }
 
 output "wif_provider" {

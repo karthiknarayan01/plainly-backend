@@ -37,6 +37,7 @@ resource "google_cloud_run_v2_service" "worker" {
   location = var.region
 
   template {
+    service_account = google_service_account.worker_runtime.email
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
       env {
@@ -45,11 +46,11 @@ resource "google_cloud_run_v2_service" "worker" {
       }
       env {
         name  = "WRITING_MODEL_ENDPOINT"
-        value = "http://${google_compute_instance.inference.network_interface[0].network_ip}:8000"
+        value = google_cloud_run_v2_service.writer_model.uri
       }
       env {
         name  = "JUDGE_MODEL_ENDPOINT"
-        value = "http://${google_compute_instance.inference.network_interface[0].network_ip}:8001"
+        value = google_cloud_run_v2_service.judge_model.uri
       }
     }
     scaling {

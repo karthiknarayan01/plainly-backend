@@ -9,11 +9,6 @@ variable "region" {
   default = "us-central1"
 }
 
-variable "zone" {
-  type    = string
-  default = "us-central1-a"
-}
-
 variable "github_repo" {
   description = "GitHub repo allowed to deploy via Workload Identity Federation"
   type        = string
@@ -26,25 +21,27 @@ variable "db_tier" {
   default     = "db-f1-micro"
 }
 
-variable "gpu_machine_type" {
-  # a2-highgpu-1g pairs with a single A100 40GB. Chosen over the cheaper
-  # L4 (24GB) because co-locating a ~14GB writing model + ~8GB judge model
-  # at 8-bit leaves only ~2GB of headroom on an L4 — not enough for the
-  # whole-document KV cache this design needs (see plainly-web design doc
-  # §09). Revisit once exact model sizes are final — if the writing model
-  # ends up smaller, or the two models run on separate boxes, L4 becomes
-  # viable and meaningfully cheaper.
-  description = "GCE machine type for the inference box"
-  type        = string
-  default     = "a2-highgpu-1g"
-}
+# --- Inference: two separate Cloud Run GPU services, scale-to-zero ---
+# Split rather than co-located on purpose: Cloud Run bills per-request
+# while each service is actually handling traffic, so each model gets
+# exactly the GPU tier it needs instead of both sharing one bigger,
+# constantly-idle-capable card. Neither runs, or costs anything, between
+# requests.
 
-variable "gpu_type" {
+variable "writer_gpu_type" {
+  # Qwen3-32B at 8-bit is ~32GB of weights alone — already past the L4's
+  # 24GB ceiling before counting the whole-document KV cache this design
+  # needs (§09 of the plainly-web design doc). RTX PRO 6000 Blackwell
+  # (96GB) leaves generous headroom for that. Confirm region availability
+  # before applying — it's not available everywhere yet.
   type    = string
-  default = "nvidia-tesla-a100"
+  default = "nvidia-rtx-pro-6000"
 }
 
-variable "gpu_count" {
-  type    = number
-  default = 1
+variable "judge_gpu_type" {
+  # The judge (8B) is comfortable on the cheaper L4 (24GB) — it only ever
+  # sees one passage pair at a time, not a whole cached document, so its
+  # memory needs are much smaller than the writer's.
+  type    = string
+  default = "nvidia-l4"
 }

@@ -54,12 +54,13 @@ also explains why or how, in simple terms, when the original supports
 that explanation. Reward rewrites that help understanding, not just ones
 that use short sentences.
 
-**4. Style check.**
-
-<!-- PLACEHOLDER — replace once the reference PDF is reviewed. Should
-     describe the target author's voice concretely enough to judge
-     against: sentence rhythm, how they introduce unfamiliar ideas, how
-     much they explain vs. assume, etc. -->
+**4. Style check.** The target voice is direct and conversational — short
+sentences, everyday words, explains through concrete comparison rather
+than abstract description, states things plainly without hedging. Flag:
+sentences that are long or complex enough to lose this reader, any
+abstract description that could have used a concrete comparison instead,
+and any hedging or vague language where the original supports a direct
+statement.
 
 ## Your output
 

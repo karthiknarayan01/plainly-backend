@@ -14,6 +14,15 @@ resource "google_service_account" "deployer" {
   display_name = "Plainly CI/CD Deployer"
 }
 
+# Runtime identity for the worker service — separate from the deployer.
+# The deployer's job is to push new revisions; this is what the worker
+# actually runs as, and it's the identity that needs run.invoker on the
+# two inference services (see inference.tf).
+resource "google_service_account" "worker_runtime" {
+  account_id   = "plainly-worker-runtime"
+  display_name = "Plainly Worker Runtime"
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github-pool"
   display_name              = "GitHub Actions Pool"
@@ -48,7 +57,6 @@ resource "google_service_account_iam_binding" "wif_binding" {
 resource "google_project_iam_member" "deployer_roles" {
   for_each = toset([
     "roles/run.admin",
-    "roles/compute.admin",
     "roles/cloudsql.admin",
     "roles/artifactregistry.writer",
     "roles/iam.serviceAccountUser",

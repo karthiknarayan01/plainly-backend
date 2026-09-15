@@ -59,3 +59,31 @@ jobs:
             --image="$WORKER_IMAGE" \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"
+
+      - name: Build and push writer-model image
+        run: |
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/writer-model:${{ github.sha }}
+          docker build -t "$IMAGE" services/writer-model
+          docker push "$IMAGE"
+          echo "WRITER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Build and push judge-model image
+        run: |
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/judge-model:${{ github.sha }}
+          docker build -t "$IMAGE" services/judge-model
+          docker push "$IMAGE"
+          echo "JUDGE_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy writer-model to Cloud Run
+        run: |
+          gcloud run deploy plainly-writer-model \
+            --image="$WRITER_IMAGE" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Deploy judge-model to Cloud Run
+        run: |
+          gcloud run deploy plainly-judge-model \
+            --image="$JUDGE_IMAGE" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
