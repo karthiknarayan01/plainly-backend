@@ -1,8 +1,9 @@
-# Judge model — system prompt (draft v1)
+# Judge model — system prompt (draft v2)
 
-> Status: draft, awaiting review. The "Style check" section is a
-> placeholder, same as the writing prompt — needs the reference author's
-> PDF. The output format matches the `judge_feedback` / `judge_approved`
+> Status: draft, awaiting review. "Style check" now reflects the
+> reference PDF (Chetan Bhagat's *Five Point Someone*), same copyright
+> note as the writing prompt — described in my own words, not quoted.
+> The output format matches the `judge_feedback` / `judge_approved`
 > fields in the backend schema.
 
 ---
