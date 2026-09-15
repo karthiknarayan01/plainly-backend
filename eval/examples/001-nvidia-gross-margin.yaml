@@ -1,0 +1,54 @@
+id: "001-nvidia-gross-margin"
+source_type: earnings_statement
+source: eval/sources/nvidia-q2-fy2027.md
+
+original_excerpt: >
+  Revenue for the second quarter ended July 26, 2026 was $96.2 billion,
+  up 106% from a year ago and up 18% sequentially. GAAP and non-GAAP
+  gross margins were both 75.0%. Data Center revenue was $89.0 billion,
+  up 117% year-over-year and up 18% quarter-over-quarter, driven
+  primarily by ramping Vera Rubin platform shipments across major cloud
+  providers. GAAP operating expenses were $8.4 billion, up 55%
+  year-over-year, reflecting continued investment in engineering
+  headcount and data center infrastructure.
+
+good_rewrite: >
+  In the three months ending July 26, 2026, NVIDIA brought in $96.2
+  billion. That's more than double what it made in the same three months
+  last year, and 18% more than the quarter before.
+
+  Of every dollar of sales, NVIDIA kept 75 cents before other costs —
+  and that was true whether you count it the standard way or the way
+  NVIDIA prefers to highlight. Almost all the money came from one place:
+  data centers, at $89.0 billion, more than double last year and up 18%
+  from last quarter. The main reason was a new chip platform called Vera
+  Rubin, which big cloud companies started buying in large numbers this
+  quarter.
+
+  Running the company cost more too — $8.4 billion, up 55% from a year
+  ago — mostly because NVIDIA hired more engineers and built more data
+  center infrastructure of its own.
+
+good_rewrite_rationale: >
+  Keeps every figure (96.2B, 106%, 18%, 75.0%, 89.0B, 117%, 8.4B, 55%)
+  and every named cause (Vera Rubin ramp, engineering/infra investment).
+  Explains "gross margin" and "GAAP vs non-GAAP" through their practical
+  meaning (cents kept per dollar of sales, "the standard way vs. the way
+  NVIDIA prefers") instead of naming the jargon and moving on. Explains
+  *why* data center revenue grew (a named cause, Vera Rubin) rather than
+  just reporting the number. Short, direct sentences; no hedging.
+
+bad_rewrite: >
+  NVIDIA had a great quarter, with revenue up significantly and strong
+  margins. Data center growth was very strong, driven by new product
+  ramps. Operating expenses also increased due to ongoing investments.
+
+bad_rewrite_rationale: >
+  Drops every number — no $96.2B, no 106%/18%, no 75.0% margin, no
+  $89.0B, no $8.4B (all losses). "Significantly," "very strong," "ongoing
+  investments" are exactly the hedging, vague language the style guide
+  says to avoid. Doesn't explain *why* data center grew — "new product
+  ramps" isn't the same as naming Vera Rubin and saying cloud providers
+  bought it in volume. Fails the meaning-preservation check almost
+  entirely: a reader learns "NVIDIA did well" and nothing else, when the
+  original supports much more specific claims.

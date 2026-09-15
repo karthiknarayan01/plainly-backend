@@ -9,7 +9,8 @@ resource "google_sql_database_instance" "main" {
 
   settings {
     tier              = var.db_tier
-    availability_type = "ZONAL" # single zone — fine at current scale, no HA needed yet
+    edition           = "ENTERPRISE" # not ENTERPRISE_PLUS — that edition rejects db-f1-micro
+    availability_type = "ZONAL"      # single zone — fine at current scale, no HA needed yet
     backup_configuration {
       enabled = true
     }
