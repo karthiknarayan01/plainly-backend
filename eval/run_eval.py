@@ -209,6 +209,16 @@ def get_scores(judge_result: dict) -> dict:
     return {dim: int(raw.get(dim, 0)) for dim in SCORE_DIMENSIONS}
 
 
+def compute_approved(scores: dict) -> bool:
+    """Recomputed from the judge's scores rather than trusting its
+    self-reported `approved` field — mirrors services/worker/llm.py.
+    Confirmed in production the judge can self-report approved=true while
+    writing down fidelity below its own stated threshold; the eval runner
+    needs to apply the same override or its calibration/benchmark numbers
+    would disagree with what the production worker actually does."""
+    return scores["overall"] >= 8 and scores["fidelity"] >= 9
+
+
 def format_scores(scores: dict) -> str:
     return " ".join(f"{dim[:3]}={scores[dim]}" for dim in SCORE_DIMENSIONS)
 
@@ -245,21 +255,22 @@ def run_calibrate(args: argparse.Namespace) -> int:
         good_scores, bad_scores = get_scores(good), get_scores(bad)
         good_scores_all.append(good_scores)
         bad_scores_all.append(bad_scores)
+        good_approved, bad_approved = compute_approved(good_scores), compute_approved(bad_scores)
 
         # Require good to actually be approved and bad rejected, plus a
         # real gap in overall score — not every dimension strictly greater
         # (style/readability legitimately tie at 10/10 even when fidelity
         # is what actually separates a good rewrite from a bad one).
         example_pass = (
-            bool(good.get("approved"))
-            and not bool(bad.get("approved"))
+            good_approved
+            and not bad_approved
             and good_scores["overall"] > bad_scores["overall"]
         )
 
         status = "PASS" if example_pass else "FAIL"
         print(f"[{ex['id']}] {status}")
-        print(f"    good: {format_scores(good_scores)} approved={good.get('approved')}")
-        print(f"    bad:  {format_scores(bad_scores)} approved={bad.get('approved')}")
+        print(f"    good: {format_scores(good_scores)} approved={good_approved}")
+        print(f"    bad:  {format_scores(bad_scores)} approved={bad_approved}")
         if not example_pass:
             print(f"    good verdict: {good.get('verdict_reason')}")
             print(f"    bad verdict:  {bad.get('verdict_reason')}")
@@ -303,8 +314,8 @@ def run_benchmark(args: argparse.Namespace) -> int:
         print(f"[{ex['id']}] judging...", flush=True)
         judge_result = call_judge(client, judge_model, ex["original_excerpt"], fresh_rewrite)
 
-        approved = bool(judge_result.get("approved"))
         scores = get_scores(judge_result)
+        approved = compute_approved(scores)
         vcount = violation_count(judge_result)
         approved_count += int(approved)
         all_scores.append(scores)

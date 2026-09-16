@@ -1,0 +1,227 @@
+id: "008-inference-engineering-toc"
+source_type: technical_book
+source: >
+  Real user-uploaded PDF, "Inference Engineering," table of contents
+  entries spanning Chapters 6-7. Sourced directly from a real production
+  job (job f0081b63, chunk 8) after the user reported the app's output
+  was "absolutely horrible" for a real document — this exact original
+  text and bad_rewrite are what the pipeline actually produced, not a
+  synthesized worst case. No eval example previously covered structural/
+  reference content (tables of contents, indices) at all, which is why
+  this failure mode shipped undetected.
+
+original_excerpt: >
+  6 Table of Contents 6.2 Embedding Models .................................................................... 159
+  6.2.1 Embedding Model Architecture ...................................... 160
+  6.2.2 Embedding Model Inference .......................................... 161
+  6.3 ASR Models ............................................................................... 162
+  6.3.1 Single-Chunk Latency Optimization ............................... 163
+  6.3.2 Long File Latency Optimization ...................................... 164
+  6.3.3 Diarization ...................................................................... 166
+  6.4 TTS Models ............................................................................... 166
+  6.4.1 Streaming Real-Time Text to Speech ............................ 168
+  6.4.2 Speech-to-Speech Models ............................................. 168
+  6.5 Image Generation Models ......................................................... 169
+  6.5.1 Image Generation Kernel Optimization .......................... 170
+  6.5.2 One Weird Trick for Faster Image Generation ............... 172
+  6.6 Video Generation Models .......................................................... 173
+  6.6.1 Attention Optimization and Quantization ........................ 174
+  6.6.2 Context Parallelism ........................................................ 176
+  Chapter 7: Production ......................................................................177
+  7.1 Containerization ......................................................................... 179
+  7.1.1 Dependency Management ............................................. 181
+  7.1.2 NIMs ............................................................................... 183
+  7.2 Autoscaling ................................................................................ 183
+  7.2.1 Concurrency and Batch Sizing ....................................... 186
+  7.2.2 Cold Starts ..................................................................... 188
+  7.2.3 Routing, Load Balancing, and Queueing ....................... 190
+  7.2.4 Scale to Zero .................................................................. 192
+  7.2.5 Independent Component Scaling ................................... 192
+  7.3 Multi-Cloud Capacity Management ........................................... 193
+  7.3.1 GPU Procurement .......................................................... 195
+  7.3.2 Geo-Aware Load Balancing ........................................... 196
+  7.3.3 Building for Reliability ..................................................... 196
+  7.3.4 Security and Compliance ............................................... 198
+  7.4 Testing and Deployment ............................................................ 199
+  7.4.1 Zero-Downtime Deployment .......................................... 200
+  7.4.2 Cost Estimation .............................................................. 201
+  7.4.3 Observability .................................................................. 203
+  7.5 Client Code ................................................................................ 204
+
+good_rewrite: >
+  This is a table of contents. It lists sections from Chapters 6 and 7,
+  and the page each one starts on:
+
+
+  - 6.2 Embedding Models — page 159
+
+  - 6.2.1 Embedding Model Architecture — page 160
+
+  - 6.2.2 Embedding Model Inference — page 161
+
+  - 6.3 ASR Models — page 162
+
+  - 6.3.1 Single-Chunk Latency Optimization — page 163
+
+  - 6.3.2 Long File Latency Optimization — page 164
+
+  - 6.3.3 Diarization — page 166
+
+  - 6.4 TTS Models — page 166
+
+  - 6.4.1 Streaming Real-Time Text to Speech — page 168
+
+  - 6.4.2 Speech-to-Speech Models — page 168
+
+  - 6.5 Image Generation Models — page 169
+
+  - 6.5.1 Image Generation Kernel Optimization — page 170
+
+  - 6.5.2 One Weird Trick for Faster Image Generation — page 172
+
+  - 6.6 Video Generation Models — page 173
+
+  - 6.6.1 Attention Optimization and Quantization — page 174
+
+  - 6.6.2 Context Parallelism — page 176
+
+  - Chapter 7: Production — page 177
+
+  - 7.1 Containerization — page 179
+
+  - 7.1.1 Dependency Management — page 181
+
+  - 7.1.2 NIMs — page 183
+
+  - 7.2 Autoscaling — page 183
+
+  - 7.2.1 Concurrency and Batch Sizing — page 186
+
+  - 7.2.2 Cold Starts — page 188
+
+  - 7.2.3 Routing, Load Balancing, and Queueing — page 190
+
+  - 7.2.4 Scale to Zero — page 192
+
+  - 7.2.5 Independent Component Scaling — page 192
+
+  - 7.3 Multi-Cloud Capacity Management — page 193
+
+  - 7.3.1 GPU Procurement — page 195
+
+  - 7.3.2 Geo-Aware Load Balancing — page 196
+
+  - 7.3.3 Building for Reliability — page 196
+
+  - 7.3.4 Security and Compliance — page 198
+
+  - 7.4 Testing and Deployment — page 199
+
+  - 7.4.1 Zero-Downtime Deployment — page 200
+
+  - 7.4.2 Cost Estimation — page 201
+
+  - 7.4.3 Observability — page 203
+
+  - 7.5 Client Code — page 204
+
+good_rewrite_rationale: >
+  Every section number, title, and page number is preserved exactly —
+  nothing renamed, nothing paraphrased, nothing dropped. "NIMs" (an
+  actual NVIDIA product name, not a term to translate) stays "NIMs"
+  rather than being expanded into an invented guess. The only change is
+  reformatting from dotted-leader table style into a clean list — that's
+  a legitimate simplification for a table of contents, since the reader's
+  job here is to find and navigate to a section, not to have prose
+  explained to them.
+
+bad_rewrite: >
+  Here's the rewritten passage in plain language:
+
+
+  6.2 Embedding Models
+
+  6.2.1 How Embedding Models Work
+
+  6.2.2 Using Embedding Models to Get Results
+
+  6.3 Speech Recognition Models
+
+  6.3.1 Making Speech Recognition Faster for Short Clips
+
+  6.3.2 Improving Speed for Long Audio Files
+
+  6.3.3 Separating Different Speakers in Audio
+
+  6.4 Text-to-Speech Models
+
+  6.4.1 Real-Time Voice Generation from Text
+
+  6.4.2 Converting Speech to Speech in Real Time
+
+  6.5 Image Creation Models
+
+  6.5.1 Optimizing Image Creation Speed
+
+  6.5.2 A Simple Trick to Speed Up Image Generation
+
+  6.6 Video Creation Models
+
+  6.6.1 Improving Video Processing Efficiency
+
+  6.6.2 Parallel Processing for Video Creation
+
+  7.1 Production Systems
+
+  7.1.1 Managing Software Dependencies
+
+  7.1.2 Neural Network Model Packaging (NIMs)
+
+  7.2 Automatic Scaling
+
+  7.2.1 Handling Multiple Requests at Once
+
+  7.2.2 Starting Up Systems Quickly
+
+  7.2.3 Distributing Workloads Across Systems
+
+  7.2.4 Turning Systems Off When Not Needed
+
+  7.2.5 Scaling Different System Parts Separately
+
+  7.3 Multi-Cloud Management
+
+  7.3.1 Getting GPU Hardware
+
+  7.3.2 Balancing Workloads by Location
+
+  7.3.3 Building Reliable Systems
+
+  7.3.4 Security and Legal Requirements
+
+  7.4 Testing and Deployment
+
+  7.4.1 Updating Systems Without Downtime
+
+  7.4.2 Calculating Operational Costs
+
+  7.4.3 Monitoring System Performance
+
+  7.5 Client Software Integration
+
+bad_rewrite_rationale: >
+  This is the actual output the production pipeline generated for this
+  exact page, and the judge scored it fidelity=7, overall=8,
+  approved=true — despite every one of these problems: (1) every single
+  page number is gone, so the table of contents can no longer do its job
+  of letting the reader find a section; (2) nearly every title is
+  paraphrased into a fabricated-sounding heading instead of reproduced
+  verbatim ("Embedding Model Architecture" -> "How Embedding Models
+  Work", "Diarization" -> "Separating Different Speakers in Audio"); (3)
+  "NIMs," an actual NVIDIA product name, is expanded into "Neural Network
+  Model Packaging (NIMs)" — an invented, unverified guess at what the
+  acronym stands for, presented as fact; (4) it opens with a leaked
+  meta-commentary preamble ("Here's the rewritten passage in plain
+  language:") that the reader would see verbatim. By the rubric's
+  structural-content rule, dozens of entries are affected — this is
+  "multiple meaningful violations," the 0-3 fidelity band, not 7.

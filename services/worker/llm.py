@@ -139,3 +139,15 @@ def call_judge(client: OpenAI, original_text: str, rewrite: str) -> dict:
 def get_scores(judge_result: dict) -> dict:
     raw = judge_result.get("scores", {})
     return {dim: int(raw.get(dim, 0)) for dim in SCORE_DIMENSIONS}
+
+
+def compute_approved(scores: dict) -> bool:
+    """Recomputes approval from the judge's own scores rather than trusting
+    its self-reported `approved` field. Confirmed in production (job
+    f0081b63, chunk 8) that the judge can write down fidelity=7 and
+    approved=true in the same JSON object despite its own prompt stating
+    the threshold is fidelity>=9 — a real instruction-following failure,
+    not a parsing bug. The threshold is simple arithmetic over numbers the
+    judge already produced, so there's no reason to let an LLM's
+    inconsistent self-report be the thing that ships or rejects a page."""
+    return scores["overall"] >= 8 and scores["fidelity"] >= 9

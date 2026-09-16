@@ -38,9 +38,12 @@ def _write_node(client: OpenAI):
 def _judge_node(client: OpenAI):
     def node(state: RetryState) -> dict:
         result = llm.call_judge(client, state["original_text"], state["rewrite"])
+        # Recomputed from the judge's own scores rather than trusting its
+        # self-reported `approved` field — see llm.compute_approved.
+        scores = llm.get_scores(result)
         return {
             "judge_result": result,
-            "approved": bool(result.get("approved")),
+            "approved": llm.compute_approved(scores),
             "feedback": result.get("verdict_reason"),
         }
     return node

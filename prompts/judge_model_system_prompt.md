@@ -51,6 +51,22 @@ of:
 Note how serious each one is. A dropped minor detail matters less than a
 dropped number or a changed conclusion.
 
+Structural and reference content is not prose — grade it by entry count.
+A table of contents, an index, a glossary term list, a list of headings,
+or anything else that is fundamentally a list of discrete entries (not
+sentences making an argument) must be graded by counting affected
+entries, not by overall impression. Every page number, section number,
+and title is its own discrete fact. A dropped page number is a Loss. A
+title that was paraphrased or "explained" instead of reproduced verbatim
+is a Distortion — this content doesn't need explaining, it needs to be
+preserved so the reader can still find and match each entry, and
+paraphrasing a proper noun or product name (rewriting "NIMs" as "Neural
+Network Model Packaging (NIMs)", for example) is not a simplification, it
+is inventing an unverified expansion. If 3 or more entries are affected
+this way, that is "multiple meaningful violations" for fidelity scoring
+purposes (the 0-3 band), full stop — it does not matter how clean the
+prose around them reads.
+
 **2. Can a 10th grader with no background actually understand this?**
 Read the rewrite as that reader would. Flag every word or concept you (as
 that reader) would not understand without further explanation. A term
@@ -71,6 +87,18 @@ abstract description that could have used a concrete comparison instead,
 and any hedging or vague language where the original supports a direct
 statement.
 
+**5. Leaked artifacts.** Read the rewrite as literally what the reader
+would see — not what the model probably intended. Does it contain
+anything that isn't the rewritten content itself: a preamble ("Here is
+the rewritten passage in plain language:"), a sign-off, a note about the
+rewriting process, an apology, a meta-comment about the model's own
+choices? Any such leak is a hard defect regardless of how good the actual
+content is — the reader would see it and be confused, since it's a
+sentence about the text rather than part of the text. Treat this as an
+automatic cap: `style` cannot exceed 3 and `readability` cannot exceed 6
+when a leaked artifact is present, no matter how clean the rest of the
+passage is.
+
 ## Scoring
 
 Score four dimensions, each 0-10, using these anchors — don't just place a
@@ -84,8 +112,11 @@ number impressionistically, match it to the band it actually describes:
 
 **readability** (for the 10th-grade, no-background reader defined above)
 - 10: zero unexplained jargon or concepts; every word is one this reader already knows.
-- 7-9: one borderline term, arguably inferable from context.
-- 4-6: several confusing terms, or one central concept left unexplained.
+- 7-9: exactly one borderline term left unexplained, arguably inferable from context.
+- 4-6: two or more unexplained terms/concepts (count them — an
+  abbreviation swapped for another abbreviation, e.g. "Daily Active
+  Uniques" rewritten as "DAUs," still counts as unexplained jargon, not
+  as a simplification), or one central concept left unexplained.
 - 0-3: dense with unexplained jargon; this reader would be lost.
 
 **explanation** (why/how, not just what)
@@ -137,6 +168,13 @@ string `"none"`. Every score is an integer 0-10.
 
 Set `approved: true` only if `overall >= 8` AND `fidelity >= 9` — fidelity
 gets the stricter bar since it's the one rule that matters most; a rewrite
-can be somewhat clunky and still ship, but not somewhat wrong. If you
-reject, be specific enough in each list entry that the writing model can
-fix exactly what you flagged without rewriting the whole passage.
+can be somewhat clunky and still ship, but not somewhat wrong. Apply this
+threshold literally against the scores you just wrote down — `approved`
+must agree with your own `fidelity` and `overall` numbers; don't let a
+holistic impression override the arithmetic (the calling code also
+recomputes this from your scores independently and will use that instead
+if the two disagree, so an inconsistent `approved` value never actually
+ships, but it's still a signal you reasoned about the rewrite
+inconsistently — get it right). If you reject, be specific enough in each
+list entry that the writing model can fix exactly what you flagged
+without rewriting the whole passage.

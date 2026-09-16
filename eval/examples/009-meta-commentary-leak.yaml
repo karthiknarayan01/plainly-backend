@@ -1,0 +1,50 @@
+id: "009-meta-commentary-leak"
+source_type: earnings_statement
+source: >
+  Synthetic passage, deliberately simple — this example isolates one
+  specific failure mode (leaked meta-commentary/preamble text) rather
+  than testing fidelity or jargon at the same time. Added after finding
+  a real leaked preamble ("Here's the rewritten passage in plain
+  language:") in production output (job f0081b63, chunk 9) that the
+  judge scored a perfect 10/10/10/10/10 despite it being visibly present
+  in what the reader would see. See 008-inference-engineering-toc.yaml
+  for the same defect co-occurring with real content loss.
+
+original_excerpt: >
+  Operating expenses increased 12% year-over-year to $4.1 billion,
+  driven primarily by higher headcount and increased marketing spend
+  ahead of the holiday season.
+
+good_rewrite: >
+  The company spent more money running its business this year — $4.1
+  billion, which is 12% more than the year before. Two things drove this:
+  it hired more people, and it spent more on marketing to get ready for
+  the holiday shopping season.
+
+good_rewrite_rationale: >
+  Preserves both numbers ($4.1 billion, 12%) and both causes (headcount,
+  holiday marketing), explains "operating expenses" and "year-over-year"
+  in plain terms, and is only the rewritten content itself — nothing
+  else.
+
+bad_rewrite: >
+  Here's the rewritten passage in plain language:
+
+
+  The company spent more money running its business this year — $4.1
+  billion, which is 12% more than the year before. Two things drove this:
+  it hired more people, and it spent more on marketing to get ready for
+  the holiday shopping season.
+
+bad_rewrite_rationale: >
+  The actual rewritten content is identical to good_rewrite — every
+  number and cause is preserved, the explanation is just as clear. The
+  only difference is the leading line "Here's the rewritten passage in
+  plain language:", which is not part of the passage at all — it's the
+  model talking about its own output, and the reader would see it
+  verbatim, sitting in front of the actual content like a label that
+  doesn't belong there. This example exists specifically to check that
+  the judge catches this on its own, independent of any other defect: if
+  the judge doesn't cap style/readability here, it isn't applying its own
+  "leaked artifacts" rule at all, only tolerating it when the underlying
+  content is also otherwise damaged.
