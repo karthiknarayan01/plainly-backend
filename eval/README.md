@@ -53,8 +53,17 @@ example, sequentially numbered.
 
 ## Running the eval — `run_eval.py`
 
+Models are hosted via [OpenRouter](https://openrouter.ai) (pay-per-token,
+no self-hosting) rather than the earlier self-hosted Cloud Run GPU plan —
+see the main README for why. Setup:
+
 ```
 pip install -r eval/requirements.txt
+
+# Put your key in a local .env file (gitignored) — never commit it:
+echo 'OPENROUTER_API_KEY=sk-or-...' > .env
+
+set -a; source .env; set +a
 
 # 1. Calibration — does the judge model agree with our own good/bad labels?
 #    Run this first. If it fails, the judge can't be trusted for anything else.
@@ -65,18 +74,22 @@ python eval/run_eval.py calibrate
 python eval/run_eval.py benchmark
 ```
 
-**Status: endpoint config is stale.** This project no longer self-hosts
-the writer/judge models on Cloud Run GPU (too expensive/slow to get GPU
-quota approved for an experimental project — see the main README).
-Writer and judge now come from OpenRouter (hosted, pay-per-token)
-instead, but `run_eval.py` still expects `--writer-endpoint`/
-`--judge-endpoint` pointing at Cloud Run URLs plus `gcloud`-based
-identity-token auth. That auth path and the GCP-specific endpoint
-plumbing need to be swapped for a plain OpenRouter base URL + API key
-before this script will actually run — not done yet. The
-calibrate/benchmark logic itself (load examples, call writer, call
-judge, score) doesn't need to change, just how the two model clients
-are constructed.
+Defaults: writer is `qwen/qwen3-32b` (matches `writing_model_system_prompt.md`),
+judge is `google/gemini-2.5-flash` — override either with `--writer-model`/
+`--judge-model`. Selene-1-Mini (the originally researched judge model)
+isn't available on any hosted marketplace, so this is a substitute;
+`openai/gpt-4o-mini` was tried first but failed a real calibration case —
+it flagged jargon from `original_excerpt` as if it appeared in the
+rewrite, which it didn't (confirmed by inspecting its raw output).
+gemini-2.5-flash got the same case right.
+
+**Current calibration result** (`python eval/run_eval.py calibrate`, all 7
+real examples): 4/7 pass outright, and the judge correctly rejects the
+bad_rewrite in all 7 — the 3 "failures" are the judge catching genuine
+minor gaps in the hand-written good_rewrites (a missing figure, an
+unexplained phrase), not hallucinated errors. Worth tightening those
+examples or loosening the calibrate pass bar (currently requires zero
+violations on the good_rewrite) — not done yet.
 
 ## Split
 

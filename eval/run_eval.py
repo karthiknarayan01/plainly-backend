@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eval runner for Plainly's writing/judge models.
+"""Eval runner for Plainly's writing/judge models, served via OpenRouter.
 
 Two modes:
 
@@ -22,16 +22,11 @@ Usage:
   python eval/run_eval.py benchmark
   python eval/run_eval.py benchmark --only 001 --out eval/results/run1.json
 
-Endpoints come from WRITING_MODEL_ENDPOINT / JUDGE_MODEL_ENDPOINT (the
-same env vars the worker service uses, see infra/terraform/cloud_run.tf)
-or the --writer-endpoint / --judge-endpoint flags.
-
-Auth: if an endpoint is a Cloud Run https URL, an identity token is
-fetched automatically via `gcloud auth print-identity-token
---audiences=<endpoint>`. This only works if your own gcloud identity has
-been granted roles/run.invoker on the writer/judge services (see the
-eval_operator_email Terraform variable in infra/terraform/variables.tf).
-Set PLAINLY_EVAL_ID_TOKEN to override with your own token instead.
+Requires OPENROUTER_API_KEY (e.g. via a local .env file — see
+eval/README.md). Writer/judge model names default to qwen/qwen3-32b and
+meta-llama/llama-3.1-70b-instruct — override with --writer-model /
+--judge-model to try others, since Selene-1-Mini (the originally
+researched judge model) isn't available hosted anywhere.
 """
 
 from __future__ import annotations
@@ -40,11 +35,10 @@ import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import yaml
 from openai import OpenAI
@@ -54,7 +48,19 @@ EXAMPLES_DIR = SCRIPT_DIR / "examples"
 RESULTS_DIR = SCRIPT_DIR / "results"
 PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
 
-REQUEST_TIMEOUT_SECONDS = 600  # scale-to-zero Cloud Run GPU cold starts can be slow
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_WRITER_MODEL = "qwen/qwen3-32b"
+# meta-llama/llama-3.1-70b-instruct was the original pick but hit a
+# persistently overloaded shared capacity pool on both its backend
+# providers when tested. openai/gpt-4o-mini was reliable but failed a
+# real calibration case — confirmed by inspecting its raw output, it
+# flagged jargon terms ("GAAP", "operating expenses") that appear only
+# in original_excerpt, not in the rewrite it was supposed to be judging,
+# meaning it wasn't reliably distinguishing the two texts. gemini-2.5-flash
+# got the same case right (0 violations on the good rewrite, correctly
+# rejected the bad one) — confirmed by testing, not just picked by name.
+DEFAULT_JUDGE_MODEL = "google/gemini-2.5-flash"
+REQUEST_TIMEOUT_SECONDS = 120
 
 
 def load_prompt(path: Path) -> str:
@@ -83,47 +89,23 @@ def load_examples(only: Optional[str], limit: Optional[int]) -> list[dict]:
     return examples
 
 
-def get_id_token(endpoint: str) -> Optional[str]:
-    override = os.environ.get("PLAINLY_EVAL_ID_TOKEN")
-    if override:
-        return override
-    if not endpoint.startswith("https://"):
-        return None  # local/plain-HTTP endpoint — assume no Cloud Run IAM in front of it
-    try:
-        result = subprocess.run(
-            ["gcloud", "auth", "print-identity-token", f"--audiences={endpoint}"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
+def make_client() -> OpenAI:
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise SystemExit(
+            "OPENROUTER_API_KEY is not set — put it in a local .env file "
+            "(see eval/README.md) and `source` it before running this script."
         )
-        return result.stdout.strip()
-    except Exception as exc:  # noqa: BLE001 — surfaced as a warning, not fatal
-        print(
-            f"warning: could not fetch an identity token for {endpoint} ({exc}); "
-            f"requests will go out unauthenticated and likely fail with 403. "
-            f"See --help for the eval_operator_email Terraform variable.",
-            file=sys.stderr,
-        )
-        return None
-
-
-def make_client(endpoint: str) -> OpenAI:
-    token = get_id_token(endpoint)
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
     return OpenAI(
-        base_url=f"{endpoint.rstrip('/')}/v1",
-        api_key="unused",  # vLLM's OpenAI-compatible server doesn't check this
-        default_headers=headers,
+        base_url=OPENROUTER_BASE_URL,
+        api_key=api_key,
         timeout=REQUEST_TIMEOUT_SECONDS,
+        # OpenRouter routes across multiple backend providers, and
+        # individual ones (DeepInfra, Bedrock, etc.) can transiently
+        # rate-limit or time out — confirmed by testing, the SDK's
+        # default of 2 retries wasn't always enough.
+        max_retries=5,
     )
-
-
-def discover_model(client: OpenAI, label: str) -> str:
-    models = client.models.list()
-    if not models.data:
-        raise SystemExit(f"{label} endpoint returned no models — is the container actually up?")
-    return models.data[0].id
 
 
 def build_writer_user_message(example: dict) -> str:
@@ -155,6 +137,12 @@ def call_writer(client: OpenAI, model: str, example: dict) -> str:
             {"role": "user", "content": build_writer_user_message(example)},
         ],
         temperature=0.3,
+        # Qwen3 defaults to "thinking mode" (visible chain-of-thought before
+        # the answer) even for a plain rewrite task — confirmed by testing,
+        # this burns ~20x more output tokens for no benefit here. Harmless
+        # to pass for non-reasoning models too (OpenRouter ignores fields a
+        # model doesn't support rather than erroring).
+        extra_body={"reasoning": {"enabled": False}},
     )
     return resp.choices[0].message.content.strip()
 
@@ -185,10 +173,11 @@ def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) 
             messages=messages,
             temperature=0.0,
             response_format={"type": "json_object"},
+            extra_body={"reasoning": {"enabled": False}},
         )
     except Exception:
-        # older/other server builds may not support response_format — the
-        # prompt itself demands JSON, so fall back to parsing that instead.
+        # not every model/provider on OpenRouter supports response_format —
+        # the prompt itself demands JSON, so fall back to parsing that instead.
         resp = client.chat.completions.create(model=model, messages=messages, temperature=0.0)
     return parse_judge_json(resp.choices[0].message.content)
 
@@ -215,21 +204,17 @@ def default_report_path(mode: str) -> Path:
 
 
 def run_calibrate(args: argparse.Namespace) -> int:
-    judge_endpoint = args.judge_endpoint or os.environ.get("JUDGE_MODEL_ENDPOINT")
-    if not judge_endpoint:
-        raise SystemExit("no judge endpoint — pass --judge-endpoint or set JUDGE_MODEL_ENDPOINT")
-
-    judge_client = make_client(judge_endpoint)
-    judge_model = discover_model(judge_client, "judge")
+    client = make_client()
+    judge_model = args.judge_model
     examples = load_examples(args.only, args.limit)
 
     results = []
     passed = 0
     for ex in examples:
         print(f"[{ex['id']}] judging good_rewrite...", flush=True)
-        good = call_judge(judge_client, judge_model, ex["original_excerpt"], ex["good_rewrite"])
+        good = call_judge(client, judge_model, ex["original_excerpt"], ex["good_rewrite"])
         print(f"[{ex['id']}] judging bad_rewrite...", flush=True)
-        bad = call_judge(judge_client, judge_model, ex["original_excerpt"], ex["bad_rewrite"])
+        bad = call_judge(client, judge_model, ex["original_excerpt"], ex["bad_rewrite"])
 
         good_ok = bool(good.get("approved")) and violation_count(good) == 0
         bad_ok = not bool(bad.get("approved"))
@@ -258,26 +243,18 @@ def run_calibrate(args: argparse.Namespace) -> int:
 
 
 def run_benchmark(args: argparse.Namespace) -> int:
-    writer_endpoint = args.writer_endpoint or os.environ.get("WRITING_MODEL_ENDPOINT")
-    judge_endpoint = args.judge_endpoint or os.environ.get("JUDGE_MODEL_ENDPOINT")
-    if not writer_endpoint:
-        raise SystemExit("no writer endpoint — pass --writer-endpoint or set WRITING_MODEL_ENDPOINT")
-    if not judge_endpoint:
-        raise SystemExit("no judge endpoint — pass --judge-endpoint or set JUDGE_MODEL_ENDPOINT")
-
-    writer_client = make_client(writer_endpoint)
-    judge_client = make_client(judge_endpoint)
-    writer_model = discover_model(writer_client, "writer")
-    judge_model = discover_model(judge_client, "judge")
+    client = make_client()
+    writer_model = args.writer_model
+    judge_model = args.judge_model
     examples = load_examples(args.only, args.limit)
 
     results = []
     approved_count = 0
     for ex in examples:
         print(f"[{ex['id']}] generating rewrite...", flush=True)
-        fresh_rewrite = call_writer(writer_client, writer_model, ex)
+        fresh_rewrite = call_writer(client, writer_model, ex)
         print(f"[{ex['id']}] judging...", flush=True)
-        judge_result = call_judge(judge_client, judge_model, ex["original_excerpt"], fresh_rewrite)
+        judge_result = call_judge(client, judge_model, ex["original_excerpt"], fresh_rewrite)
 
         approved = bool(judge_result.get("approved"))
         vcount = violation_count(judge_result)
@@ -327,13 +304,12 @@ def main() -> None:
     common.add_argument("--only", default=None, help="only run examples whose id starts with this prefix, e.g. 00 or 006")
     common.add_argument("--limit", type=int, default=None, help="only run the first N matching examples")
     common.add_argument("--out", default=None, help="path to write the JSON report (default: eval/results/<timestamp>-<mode>.json)")
+    common.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help=f"OpenRouter model slug for the judge (default: {DEFAULT_JUDGE_MODEL})")
 
     cal = sub.add_parser("calibrate", parents=[common], help="check the judge model against hand-labeled good/bad pairs")
-    cal.add_argument("--judge-endpoint", default=None)
 
     bench = sub.add_parser("benchmark", parents=[common], help="run the writing model + judge model against the eval set")
-    bench.add_argument("--writer-endpoint", default=None)
-    bench.add_argument("--judge-endpoint", default=None)
+    bench.add_argument("--writer-model", default=DEFAULT_WRITER_MODEL, help=f"OpenRouter model slug for the writer (default: {DEFAULT_WRITER_MODEL})")
 
     args = parser.parse_args()
     if args.command == "calibrate":
