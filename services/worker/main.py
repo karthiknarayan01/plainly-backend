@@ -25,7 +25,15 @@ POLL_INTERVAL_SECONDS = 2
 # 259-page upload sat at ~1 page/10s single-threaded — 40+ minutes) into
 # something that finishes in minutes instead. The openai SDK's client is
 # safe to share across threads (httpx underneath is).
-CONCURRENT_WORKERS = 8
+#
+# Not scaled higher than this for now: the real ceiling isn't CPU (the
+# container only has 1 vCPU, but this workload barely uses it), it's
+# Postgres — the current db-f1-micro tier allows only 25 total
+# connections. A thread only holds one briefly (claiming, then saving),
+# not for the whole LLM wait, so this has real headroom, but going much
+# higher without also testing OpenRouter's tolerance for the concurrency
+# and bumping the DB tier would be guessing rather than verifying.
+CONCURRENT_WORKERS = 16
 
 
 class HealthHandler(BaseHTTPRequestHandler):
