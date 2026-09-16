@@ -51,7 +51,9 @@ jobs:
         if: always()
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/worker:${{ github.sha }}
-          docker build -t "$IMAGE" services/worker
+          # Root context, not services/worker — the worker needs prompts/
+          # (outside services/worker/) copied into the image too.
+          docker build -t "$IMAGE" -f services/worker/Dockerfile .
           docker push "$IMAGE"
           echo "WORKER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
 

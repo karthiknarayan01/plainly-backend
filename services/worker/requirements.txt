@@ -1,0 +1,4 @@
+openai>=1.30
+psycopg[binary]>=3.1
+cloud-sql-python-connector[psycopg]>=1.12
+langgraph>=0.2

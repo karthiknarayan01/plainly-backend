@@ -7,10 +7,15 @@
 > the repo — style itself isn't copyrightable, the actual sentences are.
 > If you want closer wording-level matching later, that's what fine-tuning
 > is for (learning the pattern from examples), not something to do by
-> pasting excerpts into a prompt. The "Examples" section is still empty —
-> per the BLESS paper's finding, few-shot examples should be structured
-> clearly (separate labeled fields), not continuous prose. Fill it in with
-> real (original → rewrite) pairs once the eval set has some.
+> pasting excerpts into a prompt. Per the BLESS paper's finding, few-shot
+> examples should be structured clearly (separate labeled fields), not
+> continuous prose — worth adding once the eval set is large enough,
+> using that structure. Removed the empty placeholder for this that used
+> to live here: confirmed via a real worker test that the model was
+> reading the placeholder's illustrative "Why this works:" heading as a
+> literal instruction and appending that section to its actual output —
+> an HTML comment doesn't stop a model from reading and imitating the
+> text inside it.
 
 ---
 
@@ -76,18 +81,9 @@ You will be told exactly what was wrong with your last attempt (a
 confusing word, a dropped detail, a style mismatch, etc.). Fix only what
 the feedback describes. Don't rewrite parts that weren't flagged.
 
-## Examples
+## Output format
 
-<!-- Fill in with real (original → rewrite) pairs, each one clearly
-     labeled and separated — not run together as prose. Structure:
-
-### Example N
-**Original:**
-[excerpt]
-
-**Rewrite:**
-[the ideal simplified version]
-
-**Why this works:**
-[what makes it good — word choice, explanation depth, fidelity]
--->
+Produce only the rewritten passage itself — plain prose, no headings, no
+meta-commentary about your own choices, no "why this works" explanation
+of the rewrite. The reader sees only the passage; anything you'd want to
+say about your approach doesn't belong in it.
