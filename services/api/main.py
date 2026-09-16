@@ -68,19 +68,24 @@ def get_rewrite_job(job_id: str):
 @app.get("/rewrite-jobs/{job_id}/stream")
 async def stream_rewrite_job(job_id: str):
     async def event_generator():
+        # One connection for the whole stream, not one per poll — a
+        # multi-minute job at a 1s poll interval was opening hundreds of
+        # fresh Cloud SQL connections per client, which exhausted the
+        # 25-connection limit on the current DB tier under real load
+        # (confirmed happening in production, not theoretical).
         last_payload = None
-        while True:
-            with db.get_conn() as conn:
+        with db.get_conn() as conn:
+            while True:
                 snapshot = db.get_job_snapshot(conn, job_id)
-            if snapshot is None:
-                yield {"event": "error", "data": json.dumps({"detail": "job not found"})}
-                return
-            payload = _to_json(snapshot)
-            if payload != last_payload:
-                yield {"event": "update", "data": payload}
-                last_payload = payload
-            if snapshot["job"]["status"] in TERMINAL_STATUSES:
-                return
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                if snapshot is None:
+                    yield {"event": "error", "data": json.dumps({"detail": "job not found"})}
+                    return
+                payload = _to_json(snapshot)
+                if payload != last_payload:
+                    yield {"event": "update", "data": payload}
+                    last_payload = payload
+                if snapshot["job"]["status"] in TERMINAL_STATUSES:
+                    return
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
     return EventSourceResponse(event_generator())

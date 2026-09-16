@@ -26,14 +26,14 @@ POLL_INTERVAL_SECONDS = 2
 # something that finishes in minutes instead. The openai SDK's client is
 # safe to share across threads (httpx underneath is).
 #
-# Not scaled higher than this for now: the real ceiling isn't CPU (the
-# container only has 1 vCPU, but this workload barely uses it), it's
-# Postgres — the current db-f1-micro tier allows only 25 total
-# connections. A thread only holds one briefly (claiming, then saving),
-# not for the whole LLM wait, so this has real headroom, but going much
-# higher without also testing OpenRouter's tolerance for the concurrency
-# and bumping the DB tier would be guessing rather than verifying.
-CONCURRENT_WORKERS = 16
+# Dialed back from 16 to 8: confirmed in production that 16 threads
+# here, combined with the API's SSE endpoint (which was separately
+# opening a fresh connection per poll — fixed in services/api/main.py),
+# actually exhausted the db-f1-micro tier's 25-connection limit under
+# real load. The SSE fix removes the larger source of churn, but 8 is
+# the number already proven safe rather than pushing straight back to a
+# number that's already caused a real outage once.
+CONCURRENT_WORKERS = 8
 
 
 class HealthHandler(BaseHTTPRequestHandler):
