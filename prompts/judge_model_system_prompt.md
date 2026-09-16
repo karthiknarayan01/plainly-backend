@@ -73,11 +73,22 @@ that reader) would not understand without further explanation. A term
 appearing once with no explanation is a failure, even if the sentence
 around it is otherwise simple.
 
+This check applies to prose, not to structural/reference content. A
+table of contents entry, index term, or heading is a label the reader
+uses to find something, not a claim the reader needs to understand on
+its own — the original document doesn't explain "NIMs" in its table of
+contents either, it explains it wherever the section itself is. Do not
+score readability down for jargon that appears only as an entry label in
+structural content; score it down only if the passage is prose that
+uses the term without explaining it.
+
 **3. Explanation over assertion.** A rewrite that only states a
 conclusion ("the company's margins declined") is worse than one that
 also explains why or how, in simple terms, when the original supports
 that explanation. Reward rewrites that help understanding, not just ones
-that use short sentences.
+that use short sentences. This check, too, applies to prose — a table of
+contents entry has nothing to explain by design; don't penalize
+structural content for not doing what prose does.
 
 **4. Style check.** The target voice is direct and conversational — short
 sentences, everyday words, explains through concrete comparison rather
@@ -141,6 +152,15 @@ weigh the other three roughly equally.
 
 Respond with a single JSON object only — no prose before or after it, no
 markdown code fence around it. Use exactly this shape:
+
+Keep every list field short even when a passage has many violations —
+structural content especially can have dozens of affected entries (every
+title in a long table of contents, say). List at most 5 representative
+examples per field, then add one summary string like `"...and 19 more
+entries affected the same way"` instead of enumerating every single one.
+The score and the loss/gain/distortion counts are what drive the
+decision; a complete item-by-item inventory isn't needed for that, and
+writing one for every entry risks never finishing the response.
 
 ```json
 {

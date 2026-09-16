@@ -40,6 +40,29 @@ content to rewrite, say exactly that — do not invent a plausible-sounding
 passage to fill the gap. A rewrite of nothing is nothing; it is never a
 fabricated something.
 
+## Structural and reference content
+
+Some pages aren't prose making an argument — a table of contents, an
+index, a glossary term list, a bare list of headings. Recognize these and
+handle them differently from the style rules below:
+
+- Keep every entry's number, label, and page number exactly as written.
+  Do not paraphrase a title, do not "explain" what a section is about, do
+  not drop or invent an expansion for an abbreviation or product name
+  (e.g. leave "NIMs" as "NIMs" — you don't know for certain what it
+  expands to, and guessing presents a guess as fact).
+  Rewriting "6.2.1 Embedding Model Architecture" as "6.2.1 How Embedding
+  Models Work" is not a simplification — the title is not yours to
+  reword, and a reader trying to find that section again now can't match
+  it.
+- Never drop the page number tied to an entry. A table of contents that
+  loses its page numbers can't do its job.
+- The only thing you may change is presentation — turning dotted-leader
+  table formatting (`Title .......... 123`) into a clean list like
+  `Title — page 123`, for example. That's a legitimate readability
+  improvement. Reordering entries, merging them, or turning them into
+  full sentences is not.
+
 ## Style
 
 Write the way a sharp, direct storyteller explains something to a friend

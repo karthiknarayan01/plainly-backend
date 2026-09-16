@@ -87,36 +87,73 @@ python eval/run_eval.py calibrate
 python eval/run_eval.py benchmark
 ```
 
-Defaults: writer is `qwen/qwen3-32b` (matches `writing_model_system_prompt.md`),
-judge is `google/gemini-2.5-flash` — override either with `--writer-model`/
-`--judge-model`. Selene-1-Mini (the originally researched judge model)
-isn't available on any hosted marketplace, so this is a substitute;
-`openai/gpt-4o-mini` was tried first but failed a real calibration case —
-it flagged jargon from `original_excerpt` as if it appeared in the
-rewrite, which it didn't (confirmed by inspecting its raw output).
-gemini-2.5-flash got the same case right.
+Defaults: writer is `deepseek/deepseek-chat-v3.1`, judge is
+`qwen/qwen3-235b-a22b-2507` — override either with `--writer-model`/
+`--judge-model`. Both must be open-source (open-weight) models, per
+explicit product requirement — closed models (Claude, GPT, Gemini) are
+fine to pass via these same flags for a one-off comparison run, but never
+as what actually ships. See `results/model-compare/` for the benchmark
+that picked this pairing.
 
-**Current calibration result** (`python eval/run_eval.py calibrate`, all 9
-real examples): 8/9 pass. `approved` is no longer trusted from the
-judge's own JSON — `compute_approved()` recomputes it deterministically
-from the judge's own `scores` (`overall >= 8 AND fidelity >= 9`), because
-production evidence showed the judge can write down `fidelity: 7` and
-`approved: true` in the same response, directly contradicting its own
-stated rule. This isn't hypothetical: example 008's `bad_rewrite` is the
-actual text a real production run generated, and it shipped with exactly
-this inconsistency.
+**Judge candidates tried** (`calibrate`, all 9 examples): `google/gemini-
+2.5-flash` (closed, 8/9, was the production judge before the open-source
+requirement — also the model that shipped the fidelity=7/approved=true
+inconsistency that started this whole investigation, though that turned
+out to be an approval-threshold bug any judge model can make, not
+specific to Gemini), `deepseek/deepseek-chat-v3.1` (open, **9/9**),
+`qwen/qwen3-235b-a22b-2507` (open, **9/9**), `z-ai/glm-4.6` (open, 6/9 —
+clearly worse, ruled out). `openai/gpt-4o-mini` and `meta-llama/llama-
+3.1-70b-instruct` were ruled out earlier (see git history) — the former
+flagged jargon from `original_excerpt` as if it appeared in the rewrite
+it was judging, the latter hit a persistently overloaded shared capacity
+pool.
 
-The one remaining failure (005, Reddit) is a smaller, known gap: the
-judge still scores `readability: 7` on a rewrite with 4+ unexplained
-abbreviations (DAU/WAU/Y-o-Y/EBITDA), where its own rubric band calls for
-4-6 — and since that bad_rewrite's fidelity is a genuine 10 (every number
-preserved, nothing fabricated), the deterministic `overall >= 8 AND
-fidelity >= 9` check still lets it through as `approved: true`, which is
-wrong. Tightened the readability anchor once (see
-`judge_model_system_prompt.md`) and it didn't fully resolve it — flagging
-as open rather than chasing it further right now, since the two failure
-modes that motivated this whole pass (threshold non-application, leaked
-artifacts) are both confirmed fixed.
+DeepSeek-V3.1 and Qwen3-235B-2507 both calibrated perfectly, so the tie
+was broken by writer quality, not judge quality: DeepSeek-V3.1 was
+separately the strongest open-source **writer** candidate tested (see
+below), and using the same model as both writer and judge risks
+self-preference bias — a judge rating its own model family's output more
+favorably, which is exactly the kind of blind spot this investigation was
+about. Qwen3-235B-2507, a different model family with equally perfect
+calibration, avoids that.
+
+**Writer candidates tried** (`benchmark`, all 9 examples, judged by the
+old gemini-2.5-flash judge for a same-judge comparison —
+`results/model-compare/`): `qwen/qwen3-32b` (open, current-at-the-time
+production model, 8/9 approved, 4.33 avg violations), `qwen/qwen3-235b-
+a22b-2507` (open, bigger same-family model, 8/9 approved, 4.89 avg
+violations — *not* better than the smaller model), `deepseek/deepseek-
+chat-v3.1` (open, 8/9 approved, **1.11** avg violations, perfect
+10/10/10 readability/explanation/style), `anthropic/claude-sonnet-5`
+(closed reference, only **7/9** approved — worse than every open
+candidate on this eval set), `openai/gpt-5` (closed reference, 9/9
+approved, 0.22 avg violations — the only model of the five that got the
+table-of-contents case right on the first try).
+
+That last point matters: table-of-contents mishandling (dropping page
+numbers, paraphrasing titles) turned out to fail identically across
+Qwen3-32B, Qwen3-235B, DeepSeek-V3.1, *and* Claude Sonnet 5 — only GPT-5
+avoided it. That's strong evidence the failure was a **prompt gap**
+(nothing told any model that structural/reference content needs different
+handling from prose), not a "model isn't smart enough" problem — fixed in
+`writing_model_system_prompt.md`'s new "Structural and reference content"
+section, which resolved it for every model, not just the one being
+deployed.
+
+**Final production pairing result** (`benchmark`, deepseek-chat-v3.1 +
+qwen3-235b-a22b-2507, all 9 examples, after both prompt fixes): **9/9
+approved (100%), avg violations 0.11**, avg scores fid=10.0 rea=9.89
+exp=10.0 sty=10.0 ove=10.0 — including both of the previously-failing
+008/009 cases now passing cleanly.
+
+The one still-known gap: judge calibration under `google/gemini-2.5-
+flash` showed 8/9, with the one failure (005, Reddit) being the judge
+scoring `readability: 7` on a rewrite with 4+ unexplained abbreviations
+where its own rubric band calls for 4-6. Under the final
+`qwen3-235b-a22b-2507` judge this example now passes (see calibration
+numbers above), but it's still worth treating unexplained-jargon-density
+scoring as a softer spot in the rubric than the two failure modes (
+threshold non-application, leaked artifacts) that were directly fixed.
 
 ## Split
 

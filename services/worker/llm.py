@@ -19,8 +19,20 @@ from openai import OpenAI
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-WRITER_MODEL = os.environ.get("WRITER_MODEL", "qwen/qwen3-32b")
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "google/gemini-2.5-flash")
+# Both must be open-source (open-weight) models per explicit product
+# requirement — closed models are for benchmark comparison only, never
+# production. Picked from a real benchmark against the eval set
+# (eval/results/model-compare/): deepseek/deepseek-chat-v3.1 was the
+# strongest open-source writer tested (same 89% approval rate as the
+# Qwen3 candidates, but far fewer violations: 1.11 avg vs 4.33-4.89, and
+# perfect 10/10/10 on readability/explanation/style). qwen/qwen3-235b-
+# a22b-2507 was picked as judge over deepseek/deepseek-chat-v3.1 despite
+# the latter's own perfect 9/9 calibration score, specifically to avoid
+# using the same model as both writer and judge — an LLM judging its own
+# model family's output risks self-preference bias, which is exactly the
+# kind of blind spot that motivated fixing the judge in the first place.
+WRITER_MODEL = os.environ.get("WRITER_MODEL", "deepseek/deepseek-chat-v3.1")
+JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "qwen/qwen3-235b-a22b-2507")
 REQUEST_TIMEOUT_SECONDS = 120
 
 SCORE_DIMENSIONS = ("fidelity", "readability", "explanation", "style", "overall")
@@ -78,6 +90,17 @@ def build_judge_user_message(original_text: str, rewrite: str) -> str:
     )
 
 
+# A single-page rewrite has no legitimate reason to need more than this —
+# confirmed necessary by testing: without a cap, one OpenRouter provider
+# route for qwen/qwen3-235b-a22b-2507 ignored the reasoning-disable param
+# and requested a 131,072-token completion (its entire context window)
+# for a single short passage, failing outright. This is a real-money and
+# real-reliability guard against exactly that class of runaway request on
+# a real user's document, not just a benchmark convenience.
+MAX_WRITER_OUTPUT_TOKENS = 2000
+MAX_JUDGE_OUTPUT_TOKENS = 3000
+
+
 def call_writer(client: OpenAI, original_text: str, feedback: str | None) -> str:
     system_prompt = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
     messages = [
@@ -90,6 +113,7 @@ def call_writer(client: OpenAI, original_text: str, feedback: str | None) -> str
         # benefit here.
         resp = client.chat.completions.create(
             model=WRITER_MODEL, messages=messages, temperature=0.3,
+            max_tokens=MAX_WRITER_OUTPUT_TOKENS,
             extra_body={"reasoning": {"enabled": False}},
         )
     except Exception as exc:
@@ -97,7 +121,9 @@ def call_writer(client: OpenAI, original_text: str, feedback: str | None) -> str
         # ignoring it. Retry without it.
         if "reasoning" not in str(exc).lower():
             raise
-        resp = client.chat.completions.create(model=WRITER_MODEL, messages=messages, temperature=0.3)
+        resp = client.chat.completions.create(
+            model=WRITER_MODEL, messages=messages, temperature=0.3, max_tokens=MAX_WRITER_OUTPUT_TOKENS
+        )
     return resp.choices[0].message.content.strip()
 
 
@@ -126,13 +152,16 @@ def call_judge(client: OpenAI, original_text: str, rewrite: str) -> dict:
             model=JUDGE_MODEL,
             messages=messages,
             temperature=0.0,
+            max_tokens=MAX_JUDGE_OUTPUT_TOKENS,
             response_format={"type": "json_object"},
             extra_body={"reasoning": {"enabled": False}},
         )
     except Exception:
         # not every OpenRouter provider supports response_format — the
         # prompt itself demands JSON, so fall back to parsing that instead.
-        resp = client.chat.completions.create(model=JUDGE_MODEL, messages=messages, temperature=0.0)
+        resp = client.chat.completions.create(
+            model=JUDGE_MODEL, messages=messages, temperature=0.0, max_tokens=MAX_JUDGE_OUTPUT_TOKENS
+        )
     return parse_judge_json(resp.choices[0].message.content)
 
 

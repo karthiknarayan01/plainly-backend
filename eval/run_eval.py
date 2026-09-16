@@ -23,10 +23,11 @@ Usage:
   python eval/run_eval.py benchmark --only 001 --out eval/results/run1.json
 
 Requires OPENROUTER_API_KEY (e.g. via a local .env file — see
-eval/README.md). Writer/judge model names default to qwen/qwen3-32b and
-meta-llama/llama-3.1-70b-instruct — override with --writer-model /
---judge-model to try others, since Selene-1-Mini (the originally
-researched judge model) isn't available hosted anywhere.
+eval/README.md). Writer/judge model names default to
+deepseek/deepseek-chat-v3.1 and qwen/qwen3-235b-a22b-2507, both
+open-source per product requirement — override with --writer-model /
+--judge-model to try others (e.g. a closed model for a one-off quality
+comparison; see eval/README.md's model-compare section).
 """
 
 from __future__ import annotations
@@ -49,17 +50,24 @@ RESULTS_DIR = SCRIPT_DIR / "results"
 PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_WRITER_MODEL = "qwen/qwen3-32b"
-# meta-llama/llama-3.1-70b-instruct was the original pick but hit a
+# Both must be open-source per explicit product requirement — see the
+# same rationale in services/worker/llm.py, which this mirrors. Earlier
+# judge candidates rejected: meta-llama/llama-3.1-70b-instruct (hit a
 # persistently overloaded shared capacity pool on both its backend
-# providers when tested. openai/gpt-4o-mini was reliable but failed a
-# real calibration case — confirmed by inspecting its raw output, it
-# flagged jargon terms ("GAAP", "operating expenses") that appear only
-# in original_excerpt, not in the rewrite it was supposed to be judging,
-# meaning it wasn't reliably distinguishing the two texts. gemini-2.5-flash
-# got the same case right (0 violations on the good rewrite, correctly
-# rejected the bad one) — confirmed by testing, not just picked by name.
-DEFAULT_JUDGE_MODEL = "google/gemini-2.5-flash"
+# providers), openai/gpt-4o-mini (closed, and failed a real calibration
+# case — flagged jargon that appeared only in original_excerpt, not in
+# the rewrite it was judging), google/gemini-2.5-flash (closed — was the
+# production judge before the open-source requirement; also the model
+# that shipped the fidelity=7/approved=true inconsistency that started
+# the judge-reliability investigation, though that turned out to be an
+# approval-threshold bug any judge model could make, not specific to it).
+# Chosen from a real eval/results/model-compare/ benchmark: deepseek-
+# chat-v3.1 was the strongest open-source writer tested, so qwen3-235b-
+# a22b-2507 was picked as judge instead of deepseek's own (equally
+# perfect 9/9) calibration score, specifically to keep writer and judge
+# from being the same model family — self-preference bias risk.
+DEFAULT_WRITER_MODEL = "deepseek/deepseek-chat-v3.1"
+DEFAULT_JUDGE_MODEL = "qwen/qwen3-235b-a22b-2507"
 REQUEST_TIMEOUT_SECONDS = 120
 
 
@@ -128,6 +136,18 @@ def build_judge_user_message(original_excerpt: str, rewrite: str) -> str:
     )
 
 
+# A single-page rewrite has no legitimate reason to need more than this —
+# real pages in the eval set and production runs top out at a few hundred
+# output tokens. Confirmed necessary by testing: without a cap, one
+# provider route for qwen/qwen3-235b-a22b-2507 ignored the reasoning-
+# disable param and requested a 131,072-token completion (its entire
+# context window) for a single short passage, failing outright rather
+# than just wasting tokens. This is a real-money and real-reliability
+# guard, not just a benchmark convenience — a production worker call must
+# never be able to do this on a real user's document.
+MAX_WRITER_OUTPUT_TOKENS = 2000
+
+
 def call_writer(client: OpenAI, model: str, example: dict) -> str:
     system_prompt = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
     messages = [
@@ -140,6 +160,7 @@ def call_writer(client: OpenAI, model: str, example: dict) -> str:
         # this burns ~20x more output tokens for no benefit here.
         resp = client.chat.completions.create(
             model=model, messages=messages, temperature=0.3,
+            max_tokens=MAX_WRITER_OUTPUT_TOKENS,
             extra_body={"reasoning": {"enabled": False}},
         )
     except Exception as exc:
@@ -148,7 +169,9 @@ def call_writer(client: OpenAI, model: str, example: dict) -> str:
         # than just ignoring the field. Retry without it.
         if "reasoning" not in str(exc).lower():
             raise
-        resp = client.chat.completions.create(model=model, messages=messages, temperature=0.3)
+        resp = client.chat.completions.create(
+            model=model, messages=messages, temperature=0.3, max_tokens=MAX_WRITER_OUTPUT_TOKENS
+        )
     return resp.choices[0].message.content.strip()
 
 
@@ -166,6 +189,9 @@ def parse_judge_json(raw: str) -> dict:
     raise ValueError(f"judge did not return valid JSON:\n{raw}")
 
 
+MAX_JUDGE_OUTPUT_TOKENS = 3000
+
+
 def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) -> dict:
     system_prompt = load_prompt(PROMPTS_DIR / "judge_model_system_prompt.md")
     messages = [
@@ -177,13 +203,16 @@ def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) 
             model=model,
             messages=messages,
             temperature=0.0,
+            max_tokens=MAX_JUDGE_OUTPUT_TOKENS,
             response_format={"type": "json_object"},
             extra_body={"reasoning": {"enabled": False}},
         )
     except Exception:
         # not every model/provider on OpenRouter supports response_format —
         # the prompt itself demands JSON, so fall back to parsing that instead.
-        resp = client.chat.completions.create(model=model, messages=messages, temperature=0.0)
+        resp = client.chat.completions.create(
+            model=model, messages=messages, temperature=0.0, max_tokens=MAX_JUDGE_OUTPUT_TOKENS
+        )
     return parse_judge_json(resp.choices[0].message.content)
 
 
