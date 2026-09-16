@@ -7,7 +7,12 @@
 > fields in the backend schema. Output format changed to strict JSON
 > (from the earlier pseudo-YAML block) so `eval/run_eval.py` and the
 > worker's generate→judge→retry loop can both parse it reliably — same
-> fields, same meaning, just machine-parseable.
+> fields, same meaning, just machine-parseable. Added rubric-anchored
+> 0-10 scores per dimension (fidelity/readability/explanation/style/
+> overall) alongside the existing approve/reject — binary approval alone
+> couldn't show *how* good a rewrite was, just whether it cleared the
+> bar, which made it useless for comparing models/prompts that all
+> clear the bar.
 
 ---
 
@@ -66,6 +71,41 @@ abstract description that could have used a concrete comparison instead,
 and any hedging or vague language where the original supports a direct
 statement.
 
+## Scoring
+
+Score four dimensions, each 0-10, using these anchors — don't just place a
+number impressionistically, match it to the band it actually describes:
+
+**fidelity** (weighted most heavily in `overall` — see below)
+- 10: every claim, number, and fact preserved exactly. No loss, gain, or distortion at all, not even trivial.
+- 7-9: only trivial omissions (a detail that doesn't change what the reader takes away).
+- 4-6: one meaningful loss, gain, or distortion — a number, qualifier, or causal claim affected.
+- 0-3: multiple meaningful violations, or any fabricated claim, or a distortion that would leave the reader with a wrong conclusion.
+
+**readability** (for the 10th-grade, no-background reader defined above)
+- 10: zero unexplained jargon or concepts; every word is one this reader already knows.
+- 7-9: one borderline term, arguably inferable from context.
+- 4-6: several confusing terms, or one central concept left unexplained.
+- 0-3: dense with unexplained jargon; this reader would be lost.
+
+**explanation** (why/how, not just what)
+- 10: every non-obvious claim is explained — the reader understands the mechanism, not just the verdict.
+- 7-9: mostly explained, one bare assertion where the original supported more.
+- 4-6: several bare assertions that just restate conclusions.
+- 0-3: reads like a list of verdicts with no explanation anywhere.
+
+**style** (direct, concrete, short-sentence voice)
+- 10: consistently short sentences, concrete comparisons, no hedging, matches the target voice throughout.
+- 7-9: mostly on-voice, one or two sentences too long/abstract/hedged.
+- 4-6: frequently drifts into long sentences, abstraction, or hedging.
+- 0-3: reads like the original's register (formal, hedged, abstract), not the target voice at all.
+
+**overall** — your holistic judgment, 0-10. Not a plain average: a
+fidelity score below 7 should cap `overall` at or below that same
+number, since a fluent but inaccurate rewrite is worse than a clunky but
+faithful one — fidelity is the one rule that matters most. Otherwise
+weigh the other three roughly equally.
+
 ## Your output
 
 Respond with a single JSON object only — no prose before or after it, no
@@ -73,6 +113,13 @@ markdown code fence around it. Use exactly this shape:
 
 ```json
 {
+  "scores": {
+    "fidelity": 10,
+    "readability": 10,
+    "explanation": 10,
+    "style": 10,
+    "overall": 10
+  },
   "approved": true,
   "loss": [],
   "gain": [],
@@ -86,9 +133,10 @@ markdown code fence around it. Use exactly this shape:
 
 Every list field is an array of short strings, one per issue found. Use
 an empty array `[]` when a category has nothing to report — never the
-string `"none"`.
+string `"none"`. Every score is an integer 0-10.
 
-Approve only if `loss`, `gain`, and `distortion` are all empty or contain
-only truly trivial entries, and `confusing_terms` is empty. If you
-reject, be specific enough in each entry that the writing model can fix
-exactly what you flagged without rewriting the whole passage.
+Set `approved: true` only if `overall >= 8` AND `fidelity >= 9` — fidelity
+gets the stricter bar since it's the one rule that matters most; a rewrite
+can be somewhat clunky and still ship, but not somewhat wrong. If you
+reject, be specific enough in each list entry that the writing model can
+fix exactly what you flagged without rewriting the whole passage.

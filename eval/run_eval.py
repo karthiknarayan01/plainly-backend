@@ -130,20 +130,25 @@ def build_judge_user_message(original_excerpt: str, rewrite: str) -> str:
 
 def call_writer(client: OpenAI, model: str, example: dict) -> str:
     system_prompt = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": build_writer_user_message(example)},
-        ],
-        temperature=0.3,
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": build_writer_user_message(example)},
+    ]
+    try:
         # Qwen3 defaults to "thinking mode" (visible chain-of-thought before
         # the answer) even for a plain rewrite task — confirmed by testing,
-        # this burns ~20x more output tokens for no benefit here. Harmless
-        # to pass for non-reasoning models too (OpenRouter ignores fields a
-        # model doesn't support rather than erroring).
-        extra_body={"reasoning": {"enabled": False}},
-    )
+        # this burns ~20x more output tokens for no benefit here.
+        resp = client.chat.completions.create(
+            model=model, messages=messages, temperature=0.3,
+            extra_body={"reasoning": {"enabled": False}},
+        )
+    except Exception as exc:
+        # Some models (confirmed: GPT-5) reject this outright — "Reasoning
+        # is mandatory for this endpoint and cannot be disabled" — rather
+        # than just ignoring the field. Retry without it.
+        if "reasoning" not in str(exc).lower():
+            raise
+        resp = client.chat.completions.create(model=model, messages=messages, temperature=0.3)
     return resp.choices[0].message.content.strip()
 
 
@@ -182,6 +187,9 @@ def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) 
     return parse_judge_json(resp.choices[0].message.content)
 
 
+SCORE_DIMENSIONS = ("fidelity", "readability", "explanation", "style", "overall")
+
+
 def violation_count(judge_result: dict) -> int:
     total = 0
     for key in ("loss", "gain", "distortion", "confusing_terms"):
@@ -191,6 +199,23 @@ def violation_count(judge_result: dict) -> int:
         elif value and str(value).strip().lower() not in ("none", ""):
             total += 1
     return total
+
+
+def get_scores(judge_result: dict) -> dict:
+    """Scores dict with all 5 dimensions present, defaulting missing ones to 0
+    (a malformed/missing scores block should read as a failure, not silently
+    drop out of an average)."""
+    raw = judge_result.get("scores", {})
+    return {dim: int(raw.get(dim, 0)) for dim in SCORE_DIMENSIONS}
+
+
+def format_scores(scores: dict) -> str:
+    return " ".join(f"{dim[:3]}={scores[dim]}" for dim in SCORE_DIMENSIONS)
+
+
+def average_scores(all_scores: list[dict]) -> dict:
+    n = len(all_scores) or 1
+    return {dim: sum(s[dim] for s in all_scores) / n for dim in SCORE_DIMENSIONS}
 
 
 def write_report(path: Path, data: dict) -> None:
@@ -210,33 +235,54 @@ def run_calibrate(args: argparse.Namespace) -> int:
 
     results = []
     passed = 0
+    good_scores_all, bad_scores_all = [], []
     for ex in examples:
         print(f"[{ex['id']}] judging good_rewrite...", flush=True)
         good = call_judge(client, judge_model, ex["original_excerpt"], ex["good_rewrite"])
         print(f"[{ex['id']}] judging bad_rewrite...", flush=True)
         bad = call_judge(client, judge_model, ex["original_excerpt"], ex["bad_rewrite"])
 
-        good_ok = bool(good.get("approved")) and violation_count(good) == 0
-        bad_ok = not bool(bad.get("approved"))
-        example_pass = good_ok and bad_ok
+        good_scores, bad_scores = get_scores(good), get_scores(bad)
+        good_scores_all.append(good_scores)
+        bad_scores_all.append(bad_scores)
+
+        # Require good to actually be approved and bad rejected, plus a
+        # real gap in overall score — not every dimension strictly greater
+        # (style/readability legitimately tie at 10/10 even when fidelity
+        # is what actually separates a good rewrite from a bad one).
+        example_pass = (
+            bool(good.get("approved"))
+            and not bool(bad.get("approved"))
+            and good_scores["overall"] > bad_scores["overall"]
+        )
 
         status = "PASS" if example_pass else "FAIL"
-        print(
-            f"[{ex['id']}] {status}"
-            f" (good: approved={good.get('approved')} violations={violation_count(good)};"
-            f" bad: approved={bad.get('approved')} violations={violation_count(bad)})"
-        )
+        print(f"[{ex['id']}] {status}")
+        print(f"    good: {format_scores(good_scores)} approved={good.get('approved')}")
+        print(f"    bad:  {format_scores(bad_scores)} approved={bad.get('approved')}")
         if not example_pass:
             print(f"    good verdict: {good.get('verdict_reason')}")
             print(f"    bad verdict:  {bad.get('verdict_reason')}")
 
-        results.append({"id": ex["id"], "pass": example_pass, "good": good, "bad": bad})
+        results.append({
+            "id": ex["id"], "pass": example_pass,
+            "good_scores": good_scores, "bad_scores": bad_scores,
+            "good": good, "bad": bad,
+        })
         passed += int(example_pass)
 
+    avg_good = average_scores(good_scores_all)
+    avg_bad = average_scores(bad_scores_all)
     print(f"\nCalibration: {passed}/{len(examples)} examples passed.")
+    print(f"Avg good scores: {format_scores({d: round(avg_good[d], 1) for d in SCORE_DIMENSIONS})}")
+    print(f"Avg bad scores:  {format_scores({d: round(avg_bad[d], 1) for d in SCORE_DIMENSIONS})}")
 
     out_path = Path(args.out) if args.out else default_report_path("calibrate")
-    write_report(out_path, {"mode": "calibrate", "judge_model": judge_model, "results": results})
+    write_report(out_path, {
+        "mode": "calibrate", "judge_model": judge_model,
+        "avg_good_scores": avg_good, "avg_bad_scores": avg_bad,
+        "results": results,
+    })
     print(f"Report written to {out_path}")
 
     return 0 if passed == len(examples) else 1
@@ -250,6 +296,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
 
     results = []
     approved_count = 0
+    all_scores = []
     for ex in examples:
         print(f"[{ex['id']}] generating rewrite...", flush=True)
         fresh_rewrite = call_writer(client, writer_model, ex)
@@ -257,10 +304,12 @@ def run_benchmark(args: argparse.Namespace) -> int:
         judge_result = call_judge(client, judge_model, ex["original_excerpt"], fresh_rewrite)
 
         approved = bool(judge_result.get("approved"))
+        scores = get_scores(judge_result)
         vcount = violation_count(judge_result)
         approved_count += int(approved)
+        all_scores.append(scores)
 
-        print(f"[{ex['id']}] {'APPROVED' if approved else 'REJECTED'} (violations={vcount})")
+        print(f"[{ex['id']}] {'APPROVED' if approved else 'REJECTED'} {format_scores(scores)} (violations={vcount})")
         if not approved:
             print(f"    verdict: {judge_result.get('verdict_reason')}")
 
@@ -268,6 +317,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
             {
                 "id": ex["id"],
                 "approved": approved,
+                "scores": scores,
                 "violation_count": vcount,
                 "fresh_rewrite": fresh_rewrite,
                 "judge_result": judge_result,
@@ -278,7 +328,9 @@ def run_benchmark(args: argparse.Namespace) -> int:
     n = len(examples)
     avg_violations = sum(r["violation_count"] for r in results) / n if n else 0.0
     approval_rate = approved_count / n if n else 0.0
+    avg_scores = average_scores(all_scores)
     print(f"\nBenchmark: {approved_count}/{n} approved ({approval_rate:.0%}). Avg violations: {avg_violations:.2f}")
+    print(f"Avg scores: {format_scores({d: round(avg_scores[d], 2) for d in SCORE_DIMENSIONS})}")
 
     report = {
         "mode": "benchmark",
@@ -287,6 +339,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
         "judge_model": judge_model,
         "approval_rate": approval_rate,
         "avg_violations": avg_violations,
+        "avg_scores": avg_scores,
         "results": results,
     }
     out_path = Path(args.out) if args.out else default_report_path("benchmark")
