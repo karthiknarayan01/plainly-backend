@@ -14,6 +14,7 @@ resource "google_cloud_run_v2_service" "api" {
   location = var.region
 
   template {
+    service_account = google_service_account.api_runtime.email
     containers {
       # Placeholder — CI (.github/workflows/deploy.yml) owns the real
       # image via `gcloud run deploy` after the first build, and
@@ -21,8 +22,25 @@ resource "google_cloud_run_v2_service" "api" {
       # and reverting back to this placeholder on every unrelated apply.
       image = "us-docker.pkg.dev/cloudrun/container/hello"
       env {
-        name  = "DATABASE_HOST"
+        name  = "DATABASE_INSTANCE_CONNECTION_NAME"
         value = google_sql_database_instance.main.connection_name
+      }
+      env {
+        name  = "DATABASE_USER"
+        value = google_sql_user.app.name
+      }
+      env {
+        name  = "DATABASE_NAME"
+        value = google_sql_database.plainly.name
+      }
+      env {
+        name = "DATABASE_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.db_password.secret_id
+            version = "latest"
+          }
+        }
       }
     }
     scaling {
@@ -47,14 +65,44 @@ resource "google_cloud_run_v2_service" "worker" {
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
       env {
-        name  = "DATABASE_HOST"
+        name  = "DATABASE_INSTANCE_CONNECTION_NAME"
         value = google_sql_database_instance.main.connection_name
       }
-      # Writer/judge models now come from OpenRouter (hosted, pay-per-token)
-      # instead of self-hosted Cloud Run GPU services — no more per-model
-      # endpoint URLs. Whatever OpenRouter API key/model config the worker
-      # needs is a follow-up (likely a Secret Manager-backed env var), not
-      # yet wired up here.
+      env {
+        name  = "DATABASE_USER"
+        value = google_sql_user.app.name
+      }
+      env {
+        name  = "DATABASE_NAME"
+        value = google_sql_database.plainly.name
+      }
+      env {
+        name = "DATABASE_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.db_password.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "OPENROUTER_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.openrouter_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+      resources {
+        # Cloud Run's default only allocates CPU while handling an inbound
+        # HTTP request — wrong for this service, which does its real work
+        # in a background polling loop between health-check pings, not in
+        # request handlers. Without this, confirmed by testing: a claimed
+        # chunk sat "processing" for minutes with the writer/judge calls
+        # never completing, CPU too starved to make progress.
+        cpu_idle = false
+      }
     }
     scaling {
       min_instance_count = 1 # at least one worker running to poll the queue

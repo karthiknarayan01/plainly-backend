@@ -36,10 +36,10 @@ def start_health_server():
 
 
 def process_chunk(client, chunk: dict) -> None:
-    with db.get_conn() as conn:
-        try:
-            result = run_generate_judge_retry(client, chunk["original_text"])
-            scores = llm.get_scores(result["judge_result"])
+    try:
+        result = run_generate_judge_retry(client, chunk["original_text"])
+        scores = llm.get_scores(result["judge_result"])
+        with db.get_conn() as conn:
             db.save_chunk_result(
                 conn,
                 chunk["id"],
@@ -48,19 +48,36 @@ def process_chunk(client, chunk: dict) -> None:
                 result["approved"],
                 result["attempt_count"],
             )
-            print(f"[chunk {chunk['id']}] completed approved={result['approved']} attempts={result['attempt_count']} overall={scores.get('overall')}", flush=True)
-        except Exception as exc:
-            db.mark_chunk_failed(conn, chunk["id"], str(exc))
-            print(f"[chunk {chunk['id']}] FAILED: {exc}", flush=True)
-        db.maybe_complete_job(conn, chunk["job_id"])
+            db.maybe_complete_job(conn, chunk["job_id"])
+        print(f"[chunk {chunk['id']}] completed approved={result['approved']} attempts={result['attempt_count']} overall={scores.get('overall')}", flush=True)
+    except Exception as exc:
+        print(f"[chunk {chunk['id']}] FAILED: {exc}", flush=True)
+        try:
+            with db.get_conn() as conn:
+                db.mark_chunk_failed(conn, chunk["id"], str(exc))
+                db.maybe_complete_job(conn, chunk["job_id"])
+        except Exception as inner_exc:
+            # DB itself may be the thing that's down — don't let recording
+            # the failure become its own unhandled crash.
+            print(f"[chunk {chunk['id']}] also failed to record failure: {inner_exc}", flush=True)
 
 
 def main_loop():
     client = llm.make_client()
     print("worker started, polling for pending chunks", flush=True)
     while True:
-        with db.get_conn() as conn:
-            chunk = db.claim_next_chunk(conn)
+        # A transient Cloud SQL connector hiccup (seen in practice: a
+        # connection timeout under real conditions) must never kill this
+        # process — Cloud Run would restart it, but every job sitting
+        # 'pending' during that gap waits for a full cold start instead
+        # of just the next poll. Log, back off, keep going.
+        try:
+            with db.get_conn() as conn:
+                chunk = db.claim_next_chunk(conn)
+        except Exception as exc:
+            print(f"claim failed, will retry: {exc}", flush=True)
+            time.sleep(POLL_INTERVAL_SECONDS)
+            continue
         if chunk is None:
             time.sleep(POLL_INTERVAL_SECONDS)
             continue

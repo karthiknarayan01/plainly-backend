@@ -39,7 +39,16 @@ def get_conn():
         conn.close()
 
 
+STALE_CLAIM_MINUTES = 5
+
+
 def claim_next_chunk(conn) -> dict | None:
+    # Also reclaims a chunk stuck in 'processing' past STALE_CLAIM_MINUTES
+    # — the worker instance that claimed it may have crashed or been
+    # replaced mid-attempt (confirmed happening in practice: a chunk
+    # orphaned by a mid-processing restart otherwise stays stuck forever,
+    # nothing else ever re-queues it). Fresh 'pending' work is preferred
+    # over reclaiming stale work when both exist.
     with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute(
             """
@@ -48,12 +57,14 @@ def claim_next_chunk(conn) -> dict | None:
             WHERE id = (
                 SELECT id FROM rewrite_chunks
                 WHERE status = 'pending'
-                ORDER BY created_at
+                   OR (status = 'processing' AND claimed_at < now() - make_interval(mins => %s))
+                ORDER BY (status = 'pending') DESC, created_at
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
             )
             RETURNING id, job_id, original_text
-            """
+            """,
+            (STALE_CLAIM_MINUTES,),
         )
         row = cur.fetchone()
         conn.commit()

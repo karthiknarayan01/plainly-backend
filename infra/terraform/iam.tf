@@ -22,6 +22,26 @@ resource "google_service_account" "worker_runtime" {
   display_name = "Plainly Worker Runtime"
 }
 
+# Runtime identity for the api service — previously ran as the default
+# compute SA (broad, unscoped). Least-privilege, same pattern as worker.
+resource "google_service_account" "api_runtime" {
+  account_id   = "plainly-api-runtime"
+  display_name = "Plainly API Runtime"
+}
+
+# Both services connect to Cloud SQL via the connector library.
+resource "google_project_iam_member" "worker_cloudsql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.worker_runtime.email}"
+}
+
+resource "google_project_iam_member" "api_cloudsql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.api_runtime.email}"
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   workload_identity_pool_id = "github-pool"
   display_name              = "GitHub Actions Pool"
