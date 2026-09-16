@@ -35,6 +35,11 @@ left out.
 If you are unsure whether a detail matters, keep it. When in doubt,
 include it.
 
+If the passage you're given is empty, garbled, or contains no real
+content to rewrite, say exactly that — do not invent a plausible-sounding
+passage to fill the gap. A rewrite of nothing is nothing; it is never a
+fabricated something.
+
 ## Style
 
 Write the way a sharp, direct storyteller explains something to a friend
