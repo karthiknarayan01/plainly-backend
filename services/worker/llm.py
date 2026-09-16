@@ -21,21 +21,38 @@ PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Both must be open-source (open-weight) models per explicit product
 # requirement — closed models are for benchmark comparison only, never
-# production. Picked from a real benchmark against the eval set
-# (eval/results/model-compare/): deepseek/deepseek-chat-v3.1 was the
-# strongest open-source writer tested (same 89% approval rate as the
-# Qwen3 candidates, but far fewer violations: 1.11 avg vs 4.33-4.89, and
-# perfect 10/10/10 on readability/explanation/style). qwen/qwen3-235b-
-# a22b-2507 was picked as judge over deepseek/deepseek-chat-v3.1 despite
-# the latter's own perfect 9/9 calibration score, specifically to avoid
-# using the same model as both writer and judge — an LLM judging its own
-# model family's output risks self-preference bias, which is exactly the
-# kind of blind spot that motivated fixing the judge in the first place.
-WRITER_MODEL = os.environ.get("WRITER_MODEL", "deepseek/deepseek-chat-v3.1")
-JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "qwen/qwen3-235b-a22b-2507")
+# production. Picked from real benchmarks against the eval set
+# (eval/results/model-compare/, eval/README.md has the full writeup):
+#
+# deepseek/deepseek-chat-v3.1 is the strongest open-source WRITER found
+# by a wide margin (100% approved, 0 avg violations, 9.44 avg
+# "understanding" score, judged independently by a different model) — but
+# it's also, by a wide margin, the strongest open-source JUDGE found at
+# the "understanding" dimension specifically (see that dimension's
+# history in judge_model_system_prompt.md): qwen/qwen3-235b-a22b-2507 as
+# judge barely discriminated flat-but-correct output from genuinely
+# taught output even after two rounds of rubric tightening, while
+# deepseek-chat-v3.1 as judge caught it immediately and matched a closed
+# frontier model's (claude-sonnet-5) verdict on the same case.
+#
+# Using deepseek-chat-v3.1 for both roles would be the single best-
+# scoring combination, but risks self-preference bias — a model judging
+# its own family's output more favorably — on every real-time production
+# approve/retry decision, not just an occasional spot check. Chose to
+# keep writer and judge as different models instead: qwen/qwen3-235b-
+# a22b-2507 as writer (the best remaining independent option: 78%
+# approved, 8.89 avg understanding under deepseek-chat-v3.1's own
+# scoring) and deepseek-chat-v3.1 as judge, accepting somewhat lower
+# writer quality than the single best-scoring pairing in exchange for
+# writer and judge never being the same model at decision time. The
+# `oracle` eval mode (eval/run_eval.py) exists to periodically validate
+# this whole pairing against a closed frontier model and should be
+# re-run if this tradeoff needs revisiting.
+WRITER_MODEL = os.environ.get("WRITER_MODEL", "qwen/qwen3-235b-a22b-2507")
+JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "deepseek/deepseek-chat-v3.1")
 REQUEST_TIMEOUT_SECONDS = 120
 
-SCORE_DIMENSIONS = ("fidelity", "readability", "explanation", "style", "overall")
+SCORE_DIMENSIONS = ("fidelity", "understanding", "readability", "explanation", "style", "overall")
 
 
 def load_prompt(path: Path) -> str:
@@ -178,5 +195,12 @@ def compute_approved(scores: dict) -> bool:
     the threshold is fidelity>=9 — a real instruction-following failure,
     not a parsing bug. The threshold is simple arithmetic over numbers the
     judge already produced, so there's no reason to let an LLM's
-    inconsistent self-report be the thing that ships or rejects a page."""
-    return scores["overall"] >= 8 and scores["fidelity"] >= 9
+    inconsistent self-report be the thing that ships or rejects a page.
+
+    understanding >= 8 was added alongside fidelity after a real
+    comparison against a commissioned reference rewrite showed accurate,
+    simply-worded output that was still just vocabulary substitution —
+    no analogies/images bridging the hard ideas — scoring a perfect
+    overall despite reading noticeably flatter than the reference. See
+    judge_model_system_prompt.md's "understanding" dimension."""
+    return scores["overall"] >= 8 and scores["fidelity"] >= 9 and scores["understanding"] >= 8

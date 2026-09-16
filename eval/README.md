@@ -85,75 +85,160 @@ python eval/run_eval.py calibrate
 # 2. Benchmark — the real eval. Runs the writing model on each
 #    original_excerpt, then has the judge score the fresh output.
 python eval/run_eval.py benchmark
+
+# 3. Oracle — periodic validation of the whole pairing against a closed
+#    frontier model. Not part of CI or the live pipeline; run this after
+#    a model/prompt change or every so often as a trust check.
+python eval/run_eval.py oracle
 ```
 
-Defaults: writer is `deepseek/deepseek-chat-v3.1`, judge is
-`qwen/qwen3-235b-a22b-2507` — override either with `--writer-model`/
+Defaults: writer is `qwen/qwen3-235b-a22b-2507`, judge is
+`deepseek/deepseek-chat-v3.1` — override either with `--writer-model`/
 `--judge-model`. Both must be open-source (open-weight) models, per
 explicit product requirement — closed models (Claude, GPT, Gemini) are
 fine to pass via these same flags for a one-off comparison run, but never
-as what actually ships. See `results/model-compare/` for the benchmark
-that picked this pairing.
+as what actually ships. `oracle`'s own model (default
+`anthropic/claude-sonnet-5`) is exempt from that requirement by design.
+See `results/model-compare/` for the benchmarks that picked this pairing.
 
-**Judge candidates tried** (`calibrate`, all 9 examples): `google/gemini-
-2.5-flash` (closed, 8/9, was the production judge before the open-source
-requirement — also the model that shipped the fidelity=7/approved=true
-inconsistency that started this whole investigation, though that turned
-out to be an approval-threshold bug any judge model can make, not
-specific to Gemini), `deepseek/deepseek-chat-v3.1` (open, **9/9**),
-`qwen/qwen3-235b-a22b-2507` (open, **9/9**), `z-ai/glm-4.6` (open, 6/9 —
-clearly worse, ruled out). `openai/gpt-4o-mini` and `meta-llama/llama-
-3.1-70b-instruct` were ruled out earlier (see git history) — the former
-flagged jargon from `original_excerpt` as if it appeared in the rewrite
-it was judging, the latter hit a persistently overloaded shared capacity
-pool.
+### Judge candidates tried
 
-DeepSeek-V3.1 and Qwen3-235B-2507 both calibrated perfectly, so the tie
-was broken by writer quality, not judge quality: DeepSeek-V3.1 was
-separately the strongest open-source **writer** candidate tested (see
-below), and using the same model as both writer and judge risks
-self-preference bias — a judge rating its own model family's output more
-favorably, which is exactly the kind of blind spot this investigation was
-about. Qwen3-235B-2507, a different model family with equally perfect
-calibration, avoids that.
+`calibrate`, all 9 examples, original 5-dimension rubric (before
+`understanding` existed): `google/gemini-2.5-flash` (closed, 8/9, was the
+production judge before the open-source requirement — also the model
+that shipped the fidelity=7/approved=true inconsistency that started this
+whole investigation, though that turned out to be an approval-threshold
+bug any judge model can make, not specific to Gemini),
+`deepseek/deepseek-chat-v3.1` (open, 9/9), `qwen/qwen3-235b-a22b-2507`
+(open, 9/9), `z-ai/glm-4.6` (open, 6/9 — clearly worse, ruled out).
+`openai/gpt-4o-mini` and `meta-llama/llama-3.1-70b-instruct` were ruled
+out earlier (see git history).
 
-**Writer candidates tried** (`benchmark`, all 9 examples, judged by the
-old gemini-2.5-flash judge for a same-judge comparison —
-`results/model-compare/`): `qwen/qwen3-32b` (open, current-at-the-time
-production model, 8/9 approved, 4.33 avg violations), `qwen/qwen3-235b-
-a22b-2507` (open, bigger same-family model, 8/9 approved, 4.89 avg
-violations — *not* better than the smaller model), `deepseek/deepseek-
-chat-v3.1` (open, 8/9 approved, **1.11** avg violations, perfect
-10/10/10 readability/explanation/style), `anthropic/claude-sonnet-5`
-(closed reference, only **7/9** approved — worse than every open
+Both DeepSeek-V3.1 and Qwen3-235B-2507 calibrated perfectly under that
+rubric — but after adding the `understanding` dimension (see below), a
+direct test broke the tie decisively: given the same flat, vocabulary-
+only rewrite, Qwen3-235B-2507 as judge scored `understanding: 9` (barely
+different from a genuinely well-taught rewrite) even after two rounds of
+tightening the rubric into explicit B/N arithmetic, while
+`deepseek/deepseek-chat-v3.1` as judge scored it `understanding: 6`,
+correctly rejected it, and explicitly computed "B/N ~ 0.33" in its own
+verdict reasoning — matching a closed frontier model's (claude-sonnet-5)
+independent judgment on the same case. DeepSeek-V3.1 is the judge.
+
+### Writer candidates tried
+
+`benchmark`, all 9 examples (`results/model-compare/`), original
+5-dimension rubric, judged by gemini-2.5-flash: `qwen/qwen3-32b` (open,
+production model at the time, 8/9 approved, 4.33 avg violations),
+`qwen/qwen3-235b-a22b-2507` (open, bigger same-family model, 8/9
+approved, 4.89 avg violations — *not* better than the smaller model),
+`deepseek/deepseek-chat-v3.1` (open, 8/9 approved, 1.11 avg violations,
+perfect 10/10/10 readability/explanation/style), `anthropic/claude-
+sonnet-5` (closed reference, only 7/9 approved — worse than every open
 candidate on this eval set), `openai/gpt-5` (closed reference, 9/9
 approved, 0.22 avg violations — the only model of the five that got the
 table-of-contents case right on the first try).
 
-That last point matters: table-of-contents mishandling (dropping page
-numbers, paraphrasing titles) turned out to fail identically across
+That last point mattered on its own: table-of-contents mishandling
+(dropping page numbers, paraphrasing titles) failed identically across
 Qwen3-32B, Qwen3-235B, DeepSeek-V3.1, *and* Claude Sonnet 5 — only GPT-5
-avoided it. That's strong evidence the failure was a **prompt gap**
-(nothing told any model that structural/reference content needs different
-handling from prose), not a "model isn't smart enough" problem — fixed in
-`writing_model_system_prompt.md`'s new "Structural and reference content"
-section, which resolved it for every model, not just the one being
-deployed.
+avoided it, strong evidence it was a **prompt gap** (nothing told any
+model that structural/reference content needs different handling from
+prose), not a capability gap. Fixed in `writing_model_system_prompt.md`'s
+"Structural and reference content" section, which resolved it for every
+model tested, not just the one deployed.
 
-**Final production pairing result** (`benchmark`, deepseek-chat-v3.1 +
-qwen3-235b-a22b-2507, all 9 examples, after both prompt fixes): **9/9
-approved (100%), avg violations 0.11**, avg scores fid=10.0 rea=9.89
-exp=10.0 sty=10.0 ove=10.0 — including both of the previously-failing
-008/009 cases now passing cleanly.
+Re-benchmarked under the final rubric (with `understanding`) and the
+rewritten writer prompt (teacher framing + a real worked example — see
+that file's changelog), judged independently (not by itself):
+`deepseek/deepseek-chat-v3.1` as writer, judged by
+`qwen/qwen3-235b-a22b-2507`: **100% approved, 0 avg violations, 9.44 avg
+understanding** — decisively the best writer. `qwen/qwen3-235b-a22b-2507`
+as writer, judged by `deepseek/deepseek-chat-v3.1`: 78% approved, 8.89
+avg understanding. `qwen/qwen3-32b` as writer, same judge: only 56%
+approved, 8.22 avg understanding.
 
-The one still-known gap: judge calibration under `google/gemini-2.5-
-flash` showed 8/9, with the one failure (005, Reddit) being the judge
-scoring `readability: 7` on a rewrite with 4+ unexplained abbreviations
-where its own rubric band calls for 4-6. Under the final
-`qwen3-235b-a22b-2507` judge this example now passes (see calibration
-numbers above), but it's still worth treating unexplained-jargon-density
-scoring as a softer spot in the rubric than the two failure modes (
-threshold non-application, leaked artifacts) that were directly fixed.
+So DeepSeek-V3.1 is simultaneously the best open-source writer *and* the
+best open-source judge — using it for both would score highest on paper,
+but means the model grading a rewrite and the model that (in a
+counterfactual world) might have written it share a family, on every
+real-time production approve/retry decision, not just an occasional spot
+check. Chose to keep them different instead: `qwen/qwen3-235b-a22b-2507`
+as writer (the best independent option) and `deepseek/deepseek-chat-v3.1`
+as judge, accepting a real quality gap (78% vs. 100% approval on this set)
+in exchange for that separation. Revisit this tradeoff if the `oracle`
+data below stops supporting it.
+
+### The `understanding` dimension, and why the first two attempts at it didn't work
+
+A direct comparison against a real commissioned reference rewrite (the
+user's own, produced with Claude Opus 5) showed the production writer at
+the time producing output that was accurate and used simple words, but
+read noticeably flatter — vocabulary substitution rather than the
+reference's proactive use of analogies and concrete images. The original
+5-dimension rubric gave this flat output a perfect 10/10/10/10/10,
+because `style` only checks sentence mechanics (short, direct, no
+jargon), which flat prose satisfies easily.
+
+First attempt: added an `understanding` dimension with descriptive bands
+("did each idea that needed a bridge get one"). Tested directly against
+the known-flat rewrite — **still scored a perfect 10**, `missing_bridges:
+[]`. The judge's own reasoning was defensible on a sentence-by-sentence
+basis ("this particular idea isn't THAT hard, doesn't strictly need an
+analogy") while missing that the passage as a whole had zero bridges
+anywhere.
+
+Second attempt: rewrote the check as explicit arithmetic — count N
+(non-trivial ideas) and B (ideas that got a real bridge), score directly
+from B/N with hard bands (B/N<0.2 → 0-3, even for small N). Tested again:
+`qwen/qwen3-235b-a22b-2507` as judge only moved to **9** (one bridge
+flagged as missing, out of what should have been 4+). `deepseek/deepseek-
+chat-v3.1` as judge, given the identical prompt and rewrite, scored **6**
+and explicitly wrote "B/N ~ 0.33" in its verdict — this is what surfaced
+that the two judge candidates were not equally capable at this dimension,
+despite both calibrating 9/9 on the original rubric. See "Judge
+candidates tried" above for how that broke the writer/judge tie.
+
+### `oracle` mode and what it found
+
+Built per explicit request: periodically validate the production
+writer+judge pairing against a closed frontier model, since a good
+calibration run is a point-in-time result, not a permanent guarantee.
+First real run (`qwen3-235b-a22b-2507` writer, `deepseek-chat-v3.1`
+judge, `claude-sonnet-5` oracle, all 9 examples):
+
+**5/9 agree on approve/reject (56%).** Avg production scores: fid=10.0
+und=9.11 rea=9.67 exp=9.67 sty=9.56 ove=9.33. Avg oracle scores: fid=8.78
+und=8.56 rea=9.22 exp=8.67 sty=8.22 ove=8.11 — the oracle is consistently
+more skeptical across every dimension, not just approve/reject.
+
+The most serious disagreement: example 001 (NVIDIA). Production judge
+gave a **perfect fidelity: 10**. The oracle rejected it — fidelity: 6 —
+because the fresh rewrite **fabricated specific named companies (AWS,
+Google Cloud, Microsoft Azure) and unsupported details (servers,
+networking gear, factory expansion)** that don't appear anywhere in the
+original passage. This is exactly the class of error (invented, plausible
+-sounding specifics) the `fidelity` dimension exists to catch, and the
+production judge missed it completely — likely because the fabricated
+detail was stylistically consistent and topically plausible rather than
+obviously wrong, which is a harder miss to catch than the more mechanical
+failures (dropped page numbers, leaked preambles) fixed earlier in this
+file's history.
+
+Other disagreements were softer calls — the oracle being somewhat more
+conservative on `understanding` (example 002: "only 1 of roughly 4 ideas
+gets a real bridge" vs. production's more generous read) and one case
+(005) where production was *stricter* than the oracle, not more lenient.
+
+**Open question, not yet resolved**: this 56% agreement rate is real
+evidence that the open-source judge, even after two rounds of fixes, is
+less reliable than a closed frontier model — particularly at catching
+plausible-sounding fabrication. The product requirement is that
+production judge/writer must stay open-source regardless; `oracle` exists
+to make the size of that tradeoff visible and measured rather than
+theoretical, not to override the requirement. Re-run `oracle`
+periodically (and especially after any prompt/model change) to see
+whether the gap is closing, widening, or stable.
 
 ## Split
 

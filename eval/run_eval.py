@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Eval runner for Plainly's writing/judge models, served via OpenRouter.
 
-Two modes:
+Three modes:
 
   calibrate   Sanity-checks the judge model itself. For every example in
               eval/examples/, this sends the judge the original_excerpt
@@ -17,17 +17,34 @@ Two modes:
               detail, and writes a JSON report so runs can be compared
               over time (e.g. after a prompt or model change).
 
+  oracle      Validates the production writer+judge pairing itself,
+              rather than trusting a good calibration run forever. Runs
+              the production writer, then scores the same fresh output
+              with BOTH the production (open-source) judge and a closed
+              frontier "oracle" model, and reports where they disagree on
+              approve/reject. Not part of the live pipeline — this is
+              deliberately expensive and meant to be run occasionally
+              (after a model or prompt change, or periodically as a
+              sanity check) to answer "is our cheap judge actually
+              trustworthy," not on every real chunk.
+
 Usage:
   python eval/run_eval.py calibrate
   python eval/run_eval.py benchmark
   python eval/run_eval.py benchmark --only 001 --out eval/results/run1.json
+  python eval/run_eval.py oracle
+  python eval/run_eval.py oracle --oracle-model openai/gpt-5
 
 Requires OPENROUTER_API_KEY (e.g. via a local .env file — see
 eval/README.md). Writer/judge model names default to
-deepseek/deepseek-chat-v3.1 and qwen/qwen3-235b-a22b-2507, both
+qwen/qwen3-235b-a22b-2507 and deepseek/deepseek-chat-v3.1, both
 open-source per product requirement — override with --writer-model /
 --judge-model to try others (e.g. a closed model for a one-off quality
-comparison; see eval/README.md's model-compare section).
+comparison; see eval/README.md's model-compare section). `oracle`'s own
+model defaults to anthropic/claude-sonnet-5 and is exempt from the
+open-source requirement by design — it exists specifically to check the
+open-source judge against a model with no incentive to share its blind
+spots.
 """
 
 from __future__ import annotations
@@ -51,23 +68,19 @@ PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Both must be open-source per explicit product requirement — see the
-# same rationale in services/worker/llm.py, which this mirrors. Earlier
-# judge candidates rejected: meta-llama/llama-3.1-70b-instruct (hit a
-# persistently overloaded shared capacity pool on both its backend
-# providers), openai/gpt-4o-mini (closed, and failed a real calibration
-# case — flagged jargon that appeared only in original_excerpt, not in
-# the rewrite it was judging), google/gemini-2.5-flash (closed — was the
-# production judge before the open-source requirement; also the model
-# that shipped the fidelity=7/approved=true inconsistency that started
-# the judge-reliability investigation, though that turned out to be an
-# approval-threshold bug any judge model could make, not specific to it).
-# Chosen from a real eval/results/model-compare/ benchmark: deepseek-
-# chat-v3.1 was the strongest open-source writer tested, so qwen3-235b-
-# a22b-2507 was picked as judge instead of deepseek's own (equally
-# perfect 9/9) calibration score, specifically to keep writer and judge
-# from being the same model family — self-preference bias risk.
-DEFAULT_WRITER_MODEL = "deepseek/deepseek-chat-v3.1"
-DEFAULT_JUDGE_MODEL = "qwen/qwen3-235b-a22b-2507"
+# fuller rationale in services/worker/llm.py, which this mirrors, and
+# eval/README.md for the full benchmark writeup. Short version:
+# deepseek/deepseek-chat-v3.1 is the single strongest open-source model
+# at BOTH writing and judging (especially the "understanding" dimension,
+# where qwen3-235b-a22b-2507 as judge barely discriminated flat-but-
+# correct output from genuinely taught output). Using it for both roles
+# would score highest but risks self-preference bias on every real-time
+# approve/retry decision, so writer and judge are kept as different
+# models: qwen3-235b-a22b-2507 as writer (best independent option),
+# deepseek-chat-v3.1 as judge. Use the `oracle` command below to validate
+# this tradeoff against a closed frontier model periodically.
+DEFAULT_WRITER_MODEL = "qwen/qwen3-235b-a22b-2507"
+DEFAULT_JUDGE_MODEL = "deepseek/deepseek-chat-v3.1"
 REQUEST_TIMEOUT_SECONDS = 120
 
 
@@ -216,7 +229,7 @@ def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) 
     return parse_judge_json(resp.choices[0].message.content)
 
 
-SCORE_DIMENSIONS = ("fidelity", "readability", "explanation", "style", "overall")
+SCORE_DIMENSIONS = ("fidelity", "understanding", "readability", "explanation", "style", "overall")
 
 
 def violation_count(judge_result: dict) -> int:
@@ -244,8 +257,10 @@ def compute_approved(scores: dict) -> bool:
     Confirmed in production the judge can self-report approved=true while
     writing down fidelity below its own stated threshold; the eval runner
     needs to apply the same override or its calibration/benchmark numbers
-    would disagree with what the production worker actually does."""
-    return scores["overall"] >= 8 and scores["fidelity"] >= 9
+    would disagree with what the production worker actually does.
+    understanding >= 8 added alongside fidelity — see llm.compute_approved
+    and judge_model_system_prompt.md's "understanding" dimension."""
+    return scores["overall"] >= 8 and scores["fidelity"] >= 9 and scores["understanding"] >= 8
 
 
 def format_scores(scores: dict) -> str:
@@ -389,6 +404,88 @@ def run_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+# Not for production — this is deliberately closed and expensive, used to
+# periodically ask "is our cheap open-source judge actually trustworthy?"
+# rather than trust it forever on the strength of one calibration run.
+# claude-sonnet-5 by default because it's the model the target style/
+# quality bar (the commissioned reference rewrites in eval/examples/) was
+# itself produced with, and because it caught a real production judge
+# miss (see eval/README.md's "understanding" dimension writeup) on the
+# first try, with no rubric iteration needed.
+DEFAULT_ORACLE_MODEL = "anthropic/claude-sonnet-5"
+
+
+def run_oracle(args: argparse.Namespace) -> int:
+    client = make_client()
+    writer_model = args.writer_model
+    judge_model = args.judge_model
+    oracle_model = args.oracle_model
+    examples = load_examples(args.only, args.limit)
+
+    results = []
+    agree = 0
+    prod_all_scores, oracle_all_scores = [], []
+    for ex in examples:
+        print(f"[{ex['id']}] generating rewrite ({writer_model})...", flush=True)
+        fresh_rewrite = call_writer(client, writer_model, ex)
+
+        print(f"[{ex['id']}] production judge ({judge_model})...", flush=True)
+        prod_result = call_judge(client, judge_model, ex["original_excerpt"], fresh_rewrite)
+        prod_scores = get_scores(prod_result)
+        prod_approved = compute_approved(prod_scores)
+
+        print(f"[{ex['id']}] oracle judge ({oracle_model})...", flush=True)
+        oracle_result = call_judge(client, oracle_model, ex["original_excerpt"], fresh_rewrite)
+        oracle_scores = get_scores(oracle_result)
+        oracle_approved = compute_approved(oracle_scores)
+
+        agrees = prod_approved == oracle_approved
+        agree += int(agrees)
+        prod_all_scores.append(prod_scores)
+        oracle_all_scores.append(oracle_scores)
+
+        flag = "" if agrees else "  <-- DISAGREE"
+        print(f"[{ex['id']}] production: {'APPROVED' if prod_approved else 'REJECTED'} {format_scores(prod_scores)}")
+        print(f"[{ex['id']}] oracle:     {'APPROVED' if oracle_approved else 'REJECTED'} {format_scores(oracle_scores)}{flag}")
+        if not agrees:
+            print(f"    oracle verdict: {oracle_result.get('verdict_reason')}")
+
+        results.append({
+            "id": ex["id"],
+            "fresh_rewrite": fresh_rewrite,
+            "production": {"scores": prod_scores, "approved": prod_approved, "judge_result": prod_result},
+            "oracle": {"scores": oracle_scores, "approved": oracle_approved, "judge_result": oracle_result},
+            "agree": agrees,
+        })
+
+    n = len(examples)
+    agreement_rate = agree / n if n else 0.0
+    avg_prod = average_scores(prod_all_scores)
+    avg_oracle = average_scores(oracle_all_scores)
+    print(f"\nOracle validation: {agree}/{n} agree on approve/reject ({agreement_rate:.0%}).")
+    print(f"Avg production judge scores: {format_scores({d: round(avg_prod[d], 2) for d in SCORE_DIMENSIONS})}")
+    print(f"Avg oracle scores:           {format_scores({d: round(avg_oracle[d], 2) for d in SCORE_DIMENSIONS})}")
+    if agreement_rate < 1.0:
+        print("Disagreements above are where trusting the production judge alone would have shipped or rejected the wrong thing — inspect those first.")
+
+    report = {
+        "mode": "oracle",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "writer_model": writer_model,
+        "judge_model": judge_model,
+        "oracle_model": oracle_model,
+        "agreement_rate": agreement_rate,
+        "avg_production_scores": avg_prod,
+        "avg_oracle_scores": avg_oracle,
+        "results": results,
+    }
+    out_path = Path(args.out) if args.out else default_report_path("oracle")
+    write_report(out_path, report)
+    print(f"Report written to {out_path}")
+
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -404,11 +501,17 @@ def main() -> None:
     bench = sub.add_parser("benchmark", parents=[common], help="run the writing model + judge model against the eval set")
     bench.add_argument("--writer-model", default=DEFAULT_WRITER_MODEL, help=f"OpenRouter model slug for the writer (default: {DEFAULT_WRITER_MODEL})")
 
+    oracle = sub.add_parser("oracle", parents=[common], help="validate the production writer+judge pairing against a closed frontier model")
+    oracle.add_argument("--writer-model", default=DEFAULT_WRITER_MODEL, help=f"OpenRouter model slug for the writer (default: {DEFAULT_WRITER_MODEL})")
+    oracle.add_argument("--oracle-model", default=DEFAULT_ORACLE_MODEL, help=f"OpenRouter model slug for the oracle judge (default: {DEFAULT_ORACLE_MODEL})")
+
     args = parser.parse_args()
     if args.command == "calibrate":
         sys.exit(run_calibrate(args))
-    else:
+    elif args.command == "benchmark":
         sys.exit(run_benchmark(args))
+    else:
+        sys.exit(run_oracle(args))
 
 
 if __name__ == "__main__":
