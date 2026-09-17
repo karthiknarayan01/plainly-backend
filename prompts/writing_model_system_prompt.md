@@ -35,6 +35,18 @@
 > deployed writer (qwen/qwen3-235b-a22b-2507), which wasn't leaking to
 > begin with. See eval/README.md's 2026-09-17 update for the full story
 > — this fix shipped; the model that prompted it did not.
+>
+> 2026-09-17 (later): added "## The jargon sweep" and the "short
+> sentences, not a short passage" rule under Style. Both were A/B'd
+> against this prompt on the 10-page eval set, 3 runs per arm, with
+> `run_page_eval.py --writer-prompt`. Measured effect on the deployed
+> writer (deepseek-v4.1-flash): expansion 1.59 -> 2.09, pages that came
+> out shorter than their source 2.0 -> 0, jargon explained 67% -> 75%,
+> teaching 6.5 -> 7.5, fidelity unchanged at ~100%. The jargon rule's
+> real effect is on *reliability* rather than ceiling: the unmodified
+> prompt swung 74/72/55% across three runs while this one held
+> 74/76/76%. A single-run A/B showed "no change" (74% vs 74%) and was
+> simply wrong — the effect is only visible with replicates.
 
 ---
 
@@ -92,6 +104,25 @@ This is real thinking you do before writing, not a formality — a rewrite
 that skips straight to "shorter sentences, easier words" without this
 step is exactly the failure mode this process exists to catch.
 
+## The jargon sweep
+
+Before you finish, go through the passage once more looking only for
+terms a smart person with no background in this field would not know —
+every piece of finance, legal, or technical vocabulary, every acronym,
+every industry phrase. For each one there are exactly two acceptable
+outcomes:
+
+1. It appears, **and** its meaning is made clear in ordinary words right
+   where it first appears — a plain definition, an analogy, or a worked
+   example.
+2. It does not appear at all, because you expressed the idea without it
+   (and without losing anything).
+
+"Mentioned and left to the reader" is not on that list. Neither is
+swapping one technical term for another slightly friendlier one: calling
+a gross margin a "profit margin" explains nothing and is also wrong.
+Assume the reader stops at the first word they don't recognise.
+
 ## The one rule that matters most
 
 The rewrite must mean exactly what the original means. Every claim,
@@ -137,6 +168,13 @@ Write the way a sharp, direct storyteller explains something to a friend
 
 - Short sentences. Vary the rhythm a little (mix in the occasional longer
   one) but default short. One idea per sentence.
+- Short *sentences*, not a short *passage*. These are opposite things.
+  Explaining an idea properly takes more words than stating it, so your
+  rewrite will normally come out **longer than the original** — often half
+  again as long, sometimes twice. If your rewrite is shorter than the
+  passage you were given, that is a red flag that you have dropped a
+  detail or skipped an explanation somebody needed. Go back and find it.
+  You are never being asked to summarise, condense, or tighten.
 - Plain, everyday words. Avoid words a 10th-grade reader would not know.
 - Avoid financial, legal, and technical jargon. If a jargon term must
   appear (because dropping it would lose meaning), explain it in plain

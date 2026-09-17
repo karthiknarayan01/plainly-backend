@@ -102,9 +102,12 @@ def load_prompt(path: Path) -> str:
     return (text[i + len(marker):] if i != -1 else text).strip()
 
 
-def write_page(client: OpenAI, model: str, page_text: str) -> tuple[str, str]:
-    """Returns (rewrite, finish_reason). Uses the real production prompt."""
-    system = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
+def write_page(client: OpenAI, model: str, page_text: str,
+               prompt_path: Path | None = None) -> tuple[str, str]:
+    """Returns (rewrite, finish_reason). Uses the real production prompt
+    unless a variant is passed, so a prompt change can be A/B'd against
+    the deployed one on identical pages with identical scoring."""
+    system = load_prompt(prompt_path or (PROMPTS_DIR / "writing_model_system_prompt.md"))
     user = (
         "Below is a page from a document. Treat it as the full document and the "
         "full page range to rewrite this turn — it's a single, self-contained "
@@ -191,7 +194,8 @@ def judge_teaching(client: OpenAI, judge_model: str, page: dict, rewrite: str) -
     return {"explained": [], "not_explained": terms, "teaching": 0, "note": "judge returned invalid JSON"}
 
 
-def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str) -> dict:
+def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
+             prompt_path: Path | None = None) -> dict:
     per_page, failures = [], 0
     for page in pages:
         # Bail out of a model that is clearly not viable rather than paying to
@@ -202,7 +206,7 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str) ->
             print(f"  ABANDONED after {failures} failures — not a viable writer", flush=True)
             break
         try:
-            rewrite, finish = write_page(client, model, page["original_page"])
+            rewrite, finish = write_page(client, model, page["original_page"], prompt_path)
         except Exception as exc:
             failures += 1
             print(f"  [{page['id']}] FAILED: {type(exc).__name__}: {str(exc)[:110]}", flush=True)
@@ -272,6 +276,8 @@ def main() -> None:
     ap.add_argument("--models", required=True, help="comma-separated OpenRouter model slugs")
     ap.add_argument("--judge-model", default=DEFAULT_JUDGE)
     ap.add_argument("--limit", type=int, default=None, help="only the first N pages")
+    ap.add_argument("--writer-prompt", default=None,
+                    help="path to a writer-prompt variant to A/B against the deployed one")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -287,13 +293,15 @@ def main() -> None:
     results = []
     for model in [m.strip() for m in args.models.split(",") if m.strip()]:
         print(f"=== {model}")
-        results.append(evaluate(client, model, pages, args.judge_model))
+        results.append(evaluate(client, model, pages, args.judge_model,
+                                Path(args.writer_prompt) if args.writer_prompt else None))
         # Written after every model, not once at the end: an earlier run was
         # killed mid-flight after a hung model and lost every result it had
         # already paid for.
         out.write_text(json.dumps({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "judge_model": args.judge_model, "page_count": len(pages),
+            "writer_prompt": args.writer_prompt or "prompts/writing_model_system_prompt.md",
             "results": results,
         }, indent=2))
         s = results[-1]["summary"]

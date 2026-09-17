@@ -467,10 +467,59 @@ Full per-page detail: `eval/results/page-eval-final.json`.
 - **`glm-5.3-flash` is not usable here.** Empty responses on three
   consecutive pages; the harness abandoned it. Same failure class as the
   reasoning models ruled out earlier in this file.
-- **The honest remaining gap:** the closed reference still teaches
-  better (8.5 vs 7.2; 81% vs 67% of jargon terms explained) and expands
-  more generously (2.44 vs 1.59). That is a prompt problem to work on,
-  not a reason to ship a closed model, given fidelity is the promise.
+- **The remaining gap, and what happened when it was tested:** the closed
+  reference initially taught better (8.5 vs 7.2; 81% vs 67% of jargon
+  explained) and expanded more generously (2.44 vs 1.59). Calling that
+  "a prompt problem" was an assertion, so it got measured — see below.
+
+### Can prompt changes close the gap to a closed model? Partly — measured, not assumed
+
+Claiming a gap is "just prompt work" is cheap, and this repo has
+precedent both ways. The table-of-contents failure *was* a prompt gap and
+one fix resolved it for every model tested. The judge's leniency gap was
+*not* — four rounds of prompt patches never moved it and kept causing
+regressions. So the claim was A/B'd instead of repeated.
+
+Two changes were added to the writer prompt, each targeting one measured
+weakness: a **"short sentences, not a short passage"** rule (aimed at
+expansion 1.59 vs 2.44) and a **"## The jargon sweep"** section demanding
+a binary outcome per term (aimed at 67% vs 81%). Run via
+`run_page_eval.py --writer-prompt <variant>` — same 10 pages, same
+scoring, **3 runs per arm**, writer `deepseek-v4.1-flash`:
+
+| metric | deployed prompt (n=3) | + both changes (n=3) | closed reference |
+|---|---|---|---|
+| fidelity | 100.0% (100/100/100) | 99.5% (98.6/100/100) | 100.0% |
+| expansion | 1.59 (1.51/1.75/1.50) | **2.09** (2.05/2.13/2.08) | 2.44 |
+| pages shorter than source | 2.0 (1/3/2) | **0** (0/0/0) | 0 |
+| jargon explained | 67.2% (74/72/**55**) | **75.3%** (74/76/76) | 81% |
+| teaching | 6.47 (6.8/6.9/5.7) | **7.53** (7.3/8.1/7.2) | 8.5 |
+
+Both changes shipped into `writing_model_system_prompt.md`. Findings:
+
+- **Terseness is promptable, decisively.** Expansion 1.59 → 2.09 with no
+  overlap between the arms' ranges, and pages coming out *shorter than
+  their source* went 2.0 → 0 across three runs. For a product promising
+  "nothing dropped," a writer that never compresses a page is a real
+  quality change, not a metric artifact.
+- **The jargon rule works on reliability, not ceiling — and n=1 said the
+  opposite.** A single run per arm showed 74% vs 74%, and the conclusion
+  recorded at the time was "the instruction did nothing." Replicates show
+  that was wrong: the deployed prompt swung 74/72/**55**% while the
+  variant held 74/76/76%. The instruction didn't raise the best case, it
+  removed the bad case. That is invisible at n=1 — which is a warning
+  about every single-run number elsewhere in this file.
+- **Teaching moved about a point** (6.47 → 7.53), arms' ranges not
+  overlapping. Real, but judge-assigned and so the softest number here.
+- **The fidelity "regression" was noise.** One variant run lost two
+  figures, the other two were perfect: 100.0% vs 99.5% is tied.
+- **Still short of the closed reference on teaching (7.53 vs 8.5) and
+  jargon (75% vs 81%).** Roughly half to two-thirds of each gap closed by
+  wording; the residue did not yield to an explicit, forceful instruction
+  written specifically to move it. Treat it as a capability difference
+  until something demonstrates otherwise. Note the open model remains
+  *ahead* where it matters most: tied on fidelity, and fabricating
+  nothing where the closed reference invented three company names.
 
 ### Two bugs found in the eval itself, worth knowing about
 
