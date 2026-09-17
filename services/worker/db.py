@@ -1,6 +1,12 @@
 """Postgres access via the Cloud SQL Python Connector — works identically
 with local ADC credentials and with the Cloud Run service account, no
 manual proxy binary needed either place.
+
+DATABASE_URL, when set, takes precedence and connects straight through
+psycopg instead. That's the local-development path: running the real
+pipeline end-to-end against a local Postgres is the only way to test
+what a user actually sees (job -> chunks -> SSE -> reader), and the
+Cloud SQL connector can't point at localhost.
 """
 
 from __future__ import annotations
@@ -10,12 +16,21 @@ import os
 from contextlib import contextmanager
 
 import psycopg
-from google.cloud.sql.connector import Connector
 
-_connector = Connector()
+_connector = None
 
 
 def _connect():
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        return psycopg.connect(database_url)
+
+    # Imported lazily so local runs don't need the GCP dependency at all.
+    global _connector
+    if _connector is None:
+        from google.cloud.sql.connector import Connector
+
+        _connector = Connector()
     instance_connection_name = os.environ["DATABASE_INSTANCE_CONNECTION_NAME"]
     return _connector.connect(
         instance_connection_name,

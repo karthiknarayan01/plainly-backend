@@ -59,22 +59,57 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # 009 exists for) confirmed not to regress this pairing's own performance
 # (eval/results/current-production-with-promptfix.json).
 #
-# Net result: defaults stay on the pairing that's actually validated for
-# this task. Revisit claude-sonnet-5 (or another closed model) as writer
-# only if a prompt change specifically targeting the fabrication pattern
-# gets tested and shown to close that gap — don't re-adopt it on
-# reliability grounds alone, since reliability was never really the
-# gating issue once the preamble leak was fixed.
-WRITER_MODEL = os.environ.get("WRITER_MODEL", "qwen/qwen3-235b-a22b-2507")
+# Then the whole picture changed once these were tested on REAL FULL
+# PAGES instead of eval excerpts — and this is what's actually deployed.
+# The eval set's median excerpt is 266 characters; a real book page is
+# ~3,100. Every benchmark number above was measured on snippets 11x
+# smaller than the real input, which hides the behaviour that matters at
+# page scale. On a real 3,129-char page (The Art of Scalability, p.44):
+#
+# - claude-sonnet-5: 3,827 chars out — expanded the page, which is what a
+#   teaching rewrite should do. Explains jargon inline ("availability —
+#   basically, how often the site is up"), gives the reason behind each
+#   claim, covers every question in the source.
+# - deepseek-chat-v3.1: 2,304 chars out — COMPRESSED a 3,129-char page.
+#   Accurate and readable, but flat, and coming out shorter than the
+#   source is a bad sign for a "nothing dropped" guarantee.
+# - qwen3-235b-a22b-2507 (the previous writer): 2,795 chars, and it
+#   editorialises — invents a section heading and rhetorical asides
+#   ("Who owns the peace?") that appear nowhere in the source.
+#
+# None truncated at MAX_WRITER_OUTPUT_TOKENS (claude used the most, 1,020
+# of 2,000) and none leaked a preamble, now that the output-boundary
+# constraint is in writing_model_system_prompt.md.
+#
+# So claude-sonnet-5 is the writer. Its poor showing on the snippet
+# benchmark above was real, but it was measured on 266-char fragments
+# under a strict no-additions rubric; at full-page scale the same
+# expansive tendency is exactly what makes it the best of the three.
+WRITER_MODEL = os.environ.get("WRITER_MODEL", "anthropic/claude-sonnet-5")
+# Judge deliberately stays a different model family from the writer —
+# both to avoid self-preference bias on every approve/retry decision, and
+# because deepseek-chat-v3.1 is the only judge candidate with a real
+# calibration result behind it (21/24 against the hand-labeled set;
+# claude-sonnet-5 as judge managed 2/24, scoring hand-labeled GOOD
+# examples fidelity=0).
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "deepseek/deepseek-chat-v3.1")
 # Fidelity comes from a separate, dedicated fact-check call rather than
 # the combined judge call above — see judge_factcheck_system_prompt.md
-# for why a single combined call proved unreliable. deepseek-r1-0528 is
-# the fact-check model specifically (not deepseek-chat-v3.1, the judge
-# model): a direct comparison against the oracle's own fidelity verdicts
-# on the same 24 rewrites found it matching 5/6 sampled cases with zero
-# errors — see eval/README.md.
-FACTCHECK_MODEL = os.environ.get("FACTCHECK_MODEL", "deepseek/deepseek-r1-0528")
+# for why a single combined call proved unreliable.
+#
+# This was deepseek-r1-0528, picked for accuracy against the oracle's
+# fidelity verdicts (5/6 on a sampled comparison). Changed 2026-09-17 on
+# reliability grounds after watching it fail for real: mid-run it
+# returned malformed, truncated JSON (literally `{"`) and crashed a
+# benchmark, which is the same failure class already documented above for
+# other reasoning models that can't disable their reasoning step and
+# exhaust the output budget before emitting valid JSON. In production
+# that exception marks the chunk FAILED, and a failed chunk is not a
+# cosmetic problem — see chunksToSections in plainly-web: it used to hide
+# every page after the first failure. An accurate fact-checker that
+# intermittently destroys a document is worse than a slightly less
+# accurate one that always answers.
+FACTCHECK_MODEL = os.environ.get("FACTCHECK_MODEL", "deepseek/deepseek-chat-v3.1")
 # Self-consistency: call the fact-check model this many times and take
 # the MEDIAN fidelity score (see call_fact_check_consistent for why not
 # the strictest — that amplifies a single run's false positive as much as

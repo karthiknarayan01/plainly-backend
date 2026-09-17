@@ -2,6 +2,10 @@
 services/worker/db.py, duplicated rather than shared since these are two
 independently-built Docker images and each only needs a subset of the
 queries.
+
+DATABASE_URL, when set, takes precedence and connects straight through
+psycopg — the local-development path, so the real API can be run against
+a local Postgres for end-to-end testing. Same rationale as the worker's.
 """
 
 from __future__ import annotations
@@ -10,12 +14,21 @@ import os
 from contextlib import contextmanager
 
 import psycopg
-from google.cloud.sql.connector import Connector
 
-_connector = Connector()
+_connector = None
 
 
 def _connect():
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        return psycopg.connect(database_url)
+
+    # Imported lazily so local runs don't need the GCP dependency at all.
+    global _connector
+    if _connector is None:
+        from google.cloud.sql.connector import Connector
+
+        _connector = Connector()
     instance_connection_name = os.environ["DATABASE_INSTANCE_CONNECTION_NAME"]
     return _connector.connect(
         instance_connection_name,
