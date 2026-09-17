@@ -1,0 +1,195 @@
+id: p001-nvidia
+source_type: earnings_statement
+source: eval/sources/nvidia-q2-fy2027.md
+company: NVIDIA
+original_page: '# NVIDIA — Q2 FY2027 (quarter ended July 26, 2026)
+
+
+
+  ## Headline results
+
+
+  Revenue reached $96.2 billion, up 106% year-over-year and 18%
+
+  sequentially.
+
+
+  ## Revenue & margins
+
+
+  - Total revenue: $96.2 billion (Q1: $81.6B; +106% Y/Y)
+
+  - Gross margin: 75.0% (GAAP and non-GAAP)
+
+  - Data Center revenue: $89.0 billion (+117% Y/Y, +18% Q/Q)
+
+  - Edge Computing revenue: $7.2 billion (+27% Y/Y, +13% Q/Q)
+
+
+  ## Profitability
+
+
+  **GAAP:** Operating income $63.7B (+124% Y/Y); net income $59.7B (+126%
+
+  Y/Y); diluted EPS $2.46 (+128% Y/Y).
+
+
+  **Non-GAAP:** Operating income $64.0B (+124% Y/Y); net income $54.0B
+
+  (+118% Y/Y); diluted EPS $2.22 (+120% Y/Y).
+
+
+  ## Operating expenses
+
+
+  GAAP opex $8.4B (+55% Y/Y); non-GAAP opex $8.2B (+54% Y/Y).
+
+
+  ## Shareholder returns
+
+
+  $26.0 billion returned via share repurchases and dividends in the
+
+  quarter. $99.0 billion remaining under the repurchase authorization.
+
+  Quarterly dividend declared at $0.25/share.
+
+
+  ## Q3 FY2027 guidance
+
+
+  Revenue $108.0B (±2%); gross margin 74.0% (±50bps, GAAP/non-GAAP); GAAP
+
+  opex ~$9.2B; non-GAAP opex ~$9.0B; full-year FY2027 tax rate 16-18%.
+
+  Guidance excludes China data center compute revenue.
+
+
+  ## CEO commentary
+
+
+  Jensen Huang: "AI has reached its inflection point...compute is revenue.
+
+  Demand is accelerating." Cited expanded AI lab ecosystems, open-model
+
+  adoption, and physical AI momentum.
+
+
+  ## Other highlights
+
+
+  Vera Rubin platform ramping to full production across major cloud
+
+  providers; Spectrum-6 switches deploying globally; Vera CPU launched for
+
+  AI agents; Groq 3 LPX in full production; multiple partnerships announced
+
+  toward $500B+ in AI infrastructure financing; Blackwell leading MLPerf
+
+  benchmarks.'
+chars: 1653
+numbers_that_must_survive:
+- as_written: '26'
+  match: '26'
+- as_written: '2026'
+  match: '2026'
+- as_written: $96.2
+  match: '96.2'
+- as_written: 106%
+  match: '106'
+- as_written: 18%
+  match: '18'
+- as_written: $81.6
+  match: '81.6'
+- as_written: '75.0'
+  match: '75.0'
+- as_written: $89.0
+  match: '89.0'
+- as_written: 117%
+  match: '117'
+- as_written: $7.2
+  match: '7.2'
+- as_written: 27%
+  match: '27'
+- as_written: 13%
+  match: '13'
+- as_written: $63.7
+  match: '63.7'
+- as_written: 124%
+  match: '124'
+- as_written: $59.7
+  match: '59.7'
+- as_written: 126%
+  match: '126'
+- as_written: $2.46
+  match: '2.46'
+- as_written: 128%
+  match: '128'
+- as_written: $64.0
+  match: '64.0'
+- as_written: $54.0
+  match: '54.0'
+- as_written: 118%
+  match: '118'
+- as_written: $2.22
+  match: '2.22'
+- as_written: 120%
+  match: '120'
+- as_written: $8.4
+  match: '8.4'
+- as_written: 55%
+  match: '55'
+- as_written: $8.2
+  match: '8.2'
+- as_written: 54%
+  match: '54'
+- as_written: $26.0
+  match: '26.0'
+- as_written: $99.0
+  match: '99.0'
+- as_written: $0.25
+  match: '0.25'
+- as_written: $108.0
+  match: '108.0'
+- as_written: '74.0'
+  match: '74.0'
+- as_written: $9.2
+  match: '9.2'
+- as_written: $9.0
+  match: '9.0'
+- as_written: '16'
+  match: '16'
+- as_written: $500
+  match: '500'
+jargon_that_must_be_explained:
+- GAAP
+- non-GAAP
+- EPS
+- diluted
+- gross margin
+- operating income
+- net income
+- year-over-year
+- sequentially
+- guidance
+- infrastructure
+entities_that_must_not_appear:
+- Amazon
+- AWS
+- Google
+- Microsoft
+- Azure
+- Apple
+- Meta
+- Facebook
+- Netflix
+- Tesla
+- Walmart
+- Coca-Cola
+- IBM
+- Oracle
+- Salesforce
+- Uber
+- Airbnb
+- Twitter
+- OpenAI

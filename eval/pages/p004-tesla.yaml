@@ -1,0 +1,86 @@
+id: p004-tesla
+source_type: earnings_statement
+source: eval/sources/tesla-q2-2026.md
+company: Tesla
+original_page: "# Tesla — Q2 2026 (quarter ended June 30, 2026)\n\n\n## Headline\
+  \ results\n\nTotal revenue $28.236 billion, +26% Y/Y — first quarter Tesla has\n\
+  crossed $100 billion in trailing-twelve-month revenue.\n\n## Segment breakdown\n\
+  \n- Automotive revenue: $20.516 billion (+23%)\n- Services and Other: $4.58 billion\
+  \ (+50%), all-time record gross profit\n of $648 million at 14% gross margin\n\
+  - Energy: $3.14 billion (+13%)\n\n## Margins\n\nTotal GAAP gross margin 16.8%\
+  \ (-41bps Y/Y). Automotive gross margin\n16.9%, or 16.3% excluding regulatory\
+  \ credits — down from 19.2% in Q1\n2026; roughly flat excluding a $230 million\
+  \ Q1 benefit that didn't\nrepeat.\n\n## Profitability\n\nOperating income $398\
+  \ million, down 57% Y/Y; operating margin narrowed\nto 1.4%.\n\n## Note\n\nThis\
+  \ file covers Q2 2026 financial results specifically. A separate,\nearlier release\
+  \ (production/delivery report) covers unit volumes — worth\nknowing since Tesla\
+  \ splits these into two different documents, unlike\nthe other four companies\
+  \ here which report volume and financial figures\ntogether."
+chars: 1028
+numbers_that_must_survive:
+- as_written: '2026'
+  match: '2026'
+- as_written: $28.236
+  match: '28.236'
+- as_written: 26%
+  match: '26'
+- as_written: $100
+  match: '100'
+- as_written: $20.516
+  match: '20.516'
+- as_written: 23%
+  match: '23'
+- as_written: $4.58
+  match: '4.58'
+- as_written: 50%
+  match: '50'
+- as_written: $648
+  match: '648'
+- as_written: 14%
+  match: '14'
+- as_written: $3.14
+  match: '3.14'
+- as_written: 13%
+  match: '13'
+- as_written: '16.8'
+  match: '16.8'
+- as_written: '16.9'
+  match: '16.9'
+- as_written: '16.3'
+  match: '16.3'
+- as_written: '19.2'
+  match: '19.2'
+- as_written: $230
+  match: '230'
+- as_written: $398
+  match: '398'
+- as_written: 57%
+  match: '57'
+- as_written: '1.4'
+  match: '1.4'
+jargon_that_must_be_explained:
+- GAAP
+- gross margin
+- operating margin
+- operating income
+- regulatory credits
+- SLA
+entities_that_must_not_appear:
+- Amazon
+- AWS
+- Google
+- Microsoft
+- Azure
+- Apple
+- Meta
+- Facebook
+- Netflix
+- Walmart
+- Coca-Cola
+- IBM
+- Oracle
+- Salesforce
+- Uber
+- Airbnb
+- Twitter
+- OpenAI

@@ -50,16 +50,33 @@ infrastructure was removed entirely.
 
 ## Model evaluation
 
-**2026-09-17: the open-source-only requirement described below was
-dropped as a standing policy by explicit instruction, but production
-model defaults did NOT change** — a full `anthropic/claude-sonnet-5`
-writer/judge/fact-check candidate was tried against real API calls and
-tested worse than what's below (8% approved vs. 78%, later 33% after
-fixing a real leaked-preamble prompt bug, still behind). See
-`services/worker/llm.py` and `eval/README.md`'s "2026-09-17 update"
-section for the full story, including a real anti-preamble prompt fix
-that was kept regardless of the model decision. Everything below this
-note remains the live, validated configuration.
+> **2026-09-17 — current configuration, chosen on a page-scale benchmark.**
+> All three production models are open-weight:
+> **writer `deepseek/deepseek-v4.1-flash`**, judge and fact-check
+> `deepseek/deepseek-chat-v3.1`.
+>
+> The writer was picked by benchmarking 8 candidates on 10 **real full
+> pages**, scored mostly by metrics computed in code rather than by a
+> judge model's opinion. See `eval/pages/README.md` for the eval design
+> and the "2026-09-17 (final)" section of `eval/README.md` for the
+> results table and caveats.
+>
+> | | fidelity (figures kept) | fabricated names | teaching |
+> |---|---|---|---|
+> | **`deepseek-v4.1-flash`** (now deployed) | **100.0%** | **0** | 7.2 |
+> | `claude-sonnet-5` (closed reference) | 100.0% | 3 | 8.5 |
+> | `qwen3-235b-a22b-2507` (previously deployed) | 85.2% | 0 | 7.1 |
+>
+> The open model matched the closed frontier reference on fidelity and
+> beat it on fabrication, so production needs no closed model. The
+> previously deployed writer was silently dropping about one figure in
+> seven — a serious defect on a financial document, and one the older
+> excerpt-based benchmark rated "78% approved."
+>
+> Everything in this section below this note predates that benchmark and
+> was measured on hand-trimmed excerpts with a median length of 266
+> characters — roughly 9x smaller than a real page. Kept as history, not
+> as the current basis for anything.
 
 This section is a summary — `eval/README.md` has the full writeup,
 including every candidate tried and why each one was ruled out.

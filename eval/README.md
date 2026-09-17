@@ -406,7 +406,102 @@ before trusting the gap is meaningfully closed, and reconsider raising
 `FACTCHECK_CONSISTENCY_N` back up if quality still looks underwhelming
 in practice.
 
-## 2026-09-17 update: open-source-only requirement dropped, but the closed-model swap didn't pan out
+## 2026-09-17 (final): a page-scale eval set, and an open model that matches the closed one
+
+**Everything below this section is superseded for model-selection
+purposes.** The excerpt-based set documented further down has a median
+input of **266 characters**; a real page the product processes is
+**~1,000-3,400**. Every model decision in this file's long history was
+therefore made on inputs roughly 9x smaller than production input, and
+the ranking it produced did not survive contact with real pages.
+
+The replacement lives in **`eval/pages/`** (see `eval/pages/README.md`
+for the design and its limitations) and is run by
+**`eval/run_page_eval.py`**. Two things changed on purpose:
+
+1. **Real full pages.** 10 of them — 5 real earnings releases, 5 real
+   pages from a technical book. Median input 2,376 chars.
+2. **Most of the score is computed in code, not asked of a judge.** A
+   judge saying "9/10" is not evidence that the reader got every number.
+   So the primary metrics are counted: figures preserved (micro-averaged
+   over all 142 figures), invented company names from a watchlist, and
+   output/input length ratio — which catches a model *summarising* a
+   page, the one thing this product must never do and something a
+   266-char excerpt structurally cannot reveal.
+
+### Results — 10 real pages, judge `deepseek-chat-v3.1` for the narrow teaching questions
+
+| Model | Open weights | Fidelity (figures kept) | Fabricated names | Expansion | Pages shrunk | Jargon explained | Teaching | Failures |
+|---|---|---|---|---|---|---|---|---|
+| **`deepseek/deepseek-v4.1-flash`** | **Yes** | **100.0%** | **0** | 1.59 | 1 | 67% | 7.2 | 0 |
+| `anthropic/claude-sonnet-5` | No (reference) | 100.0% | **3** | 2.44 | 0 | 81% | 8.5 | 0 |
+| `deepseek/deepseek-v4-pro-0813` | Yes | 98.6% | 0 | 1.24 | 3 | 40% | 4.2 | 0 |
+| `minimax/minimax-m3` | Yes | 93.7% | 3 | 1.94 | 3 | 67% | 6.2 | 1 |
+| `qwen/qwen3-235b-a22b-2507` | Yes | 85.2% | 0 | 1.62 | 1 | 53% | 7.1 | 0 |
+| `deepseek/deepseek-chat-v3.1` | Yes | 85.2% | 0 | 1.25 | 5 | 64% | 6.7 | 0 |
+| `meta-llama/llama-4-maverick` | Yes | 80.3% | 0 | 1.18 | 5 | 33% | 4.5 | 0 |
+| `z-ai/glm-5.3-flash` | Yes | — | — | — | — | — | — | **3, abandoned** |
+
+Full per-page detail: `eval/results/page-eval-final.json`.
+
+### What the numbers say
+
+- **`deepseek-v4.1-flash` is the writer.** It preserved *every* figure
+  across the whole set — matching the closed frontier reference exactly —
+  and unlike that reference it invented nothing. It never truncated,
+  never leaked a planning preamble, and shrank only one page. It is
+  open-weight and roughly 25x cheaper per output token than the closed
+  reference.
+- **The closed model fabricated and the open one didn't.** `claude-sonnet-5`
+  inserted three real company names into the NVIDIA page that the source
+  never mentions — the exact "illustrative example" failure mode this
+  file has been chasing for its whole history. `minimax-m3` did the same
+  thing on the same page. Fluency is not fidelity.
+- **The previously deployed writer was losing content.** `qwen3-235b-a22b-2507`
+  preserved only 85.2% of figures. On a financial document, silently
+  dropping one figure in seven is a serious defect, and the excerpt-based
+  benchmark rated this model 78% approved.
+- **Bigger is not better.** `deepseek-v4-pro-0813` scored *worse* than the
+  cheaper `v4.1-flash` on every quality axis except a hair of fidelity,
+  and explained only 40% of jargon.
+- **`glm-5.3-flash` is not usable here.** Empty responses on three
+  consecutive pages; the harness abandoned it. Same failure class as the
+  reasoning models ruled out earlier in this file.
+- **The honest remaining gap:** the closed reference still teaches
+  better (8.5 vs 7.2; 81% vs 67% of jargon terms explained) and expands
+  more generously (2.44 vs 1.59). That is a prompt problem to work on,
+  not a reason to ship a closed model, given fidelity is the promise.
+
+### Two bugs found in the eval itself, worth knowing about
+
+- **Per-page averaging was wrong.** The first version averaged per-page
+  recall percentages, so a prose page carrying one figure counted as much
+  as the NVIDIA page carrying 36. Now micro-averaged over all figures.
+- **Page-number headers were being scored as facts.** A printed page
+  carries its own folio number in the running header ("18 CHAPTER 1 THE
+  IMPACT OF...", "DEFINING ROLES 23"). The first run required those to
+  survive, so **every model scored 0% on four prose pages for correctly
+  dropping a page number**. The extractor now ignores a header/footer
+  figure unless it also appears in the body.
+
+Both are a reminder that an eval number is only as trustworthy as the
+eval, which is the whole reason the old excerpt set went unchallenged for
+so long.
+
+### Operational notes from running this
+
+- Run-to-run variance is real: `deepseek-chat-v3.1` scored 94%, 58%, then
+  69% on the same page across three runs at production temperature (0.3).
+  Treat gaps under ~10 points as noise.
+- The harness now fails fast (75s timeout, 2 retries) and writes its
+  report after *every* model. An earlier run used 180s x 5 retries; one
+  stalled provider route blocked a single page for ~18 minutes and killed
+  two runs, one of which lost results that had already been paid for.
+- Credit exhaustion looks exactly like a hang, not like an error:
+  OpenRouter accepted connections and stalled rather than failing
+  cleanly. Check the balance first when a run inexplicably crawls.
+
+## 2026-09-17 (earlier): open-source-only requirement dropped, but the closed-model swap didn't pan out
 
 Everything above this section documents real, measured work trying to
 close the gap between an open-source judge and a closed frontier one —

@@ -81,11 +81,38 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # of 2,000) and none leaked a preamble, now that the output-boundary
 # constraint is in writing_model_system_prompt.md.
 #
-# So claude-sonnet-5 is the writer. Its poor showing on the snippet
-# benchmark above was real, but it was measured on 266-char fragments
-# under a strict no-additions rubric; at full-page scale the same
-# expansive tendency is exactly what makes it the best of the three.
-WRITER_MODEL = os.environ.get("WRITER_MODEL", "anthropic/claude-sonnet-5")
+# That made claude-sonnet-5 the writer for a few hours — and then a
+# purpose-built page-scale benchmark replaced that judgement with
+# measurement, and found an open model that matches it. See
+# eval/pages/README.md for the eval design and eval/run_page_eval.py for
+# the harness; most of the score is computed in code (figures preserved,
+# invented company names, output/input length ratio) rather than asked of
+# a judge model. 10 real pages, median 2,376 chars:
+#
+#   model                        fidelity  fabricated  expansion  teaching
+#   deepseek-v4.1-flash          100.0%         0        1.59       7.2
+#   claude-sonnet-5 (closed ref) 100.0%         3        2.44       8.5
+#   deepseek-v4-pro-0813          98.6%         0        1.24       4.2
+#   minimax-m3                    93.7%         3        1.94       6.2
+#   qwen3-235b-a22b-2507          85.2%         0        1.62       7.1
+#   deepseek-chat-v3.1            85.2%         0        1.25       6.7
+#   llama-4-maverick              80.3%         0        1.18       4.5
+#   glm-5.3-flash                 empty responses — not a viable writer
+#
+# deepseek-v4.1-flash preserved every single figure across the set, the
+# same as the closed reference, and unlike it invented nothing —
+# claude-sonnet-5 put three real company names into the NVIDIA page that
+# the source never mentions, which is precisely the fabrication failure
+# this product cannot afford. It also never truncated, never leaked a
+# preamble, and shrank only one page. It's open-weight, and ~25x cheaper
+# on output than the closed reference.
+#
+# The honest gap: claude-sonnet-5 still teaches better (8.5 vs 7.2, and
+# 81% vs 67% of jargon terms explained) and expands more generously.
+# Fidelity is the promise, though, and an open model that holds fidelity
+# while inventing nothing is the right trade here — closing the teaching
+# gap is prompt work, not a reason to ship a closed model.
+WRITER_MODEL = os.environ.get("WRITER_MODEL", "deepseek/deepseek-v4.1-flash")
 # Judge deliberately stays a different model family from the writer —
 # both to avoid self-preference bias on every approve/retry decision, and
 # because deepseek-chat-v3.1 is the only judge candidate with a real
