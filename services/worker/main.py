@@ -9,6 +9,7 @@
 # so it doesn't interfere with the claim loop.
 
 import os
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -63,6 +64,69 @@ def start_health_server():
 MIN_TEXT_LENGTH = 20
 
 
+# Front/back matter that is navigation, not reading: tables of contents,
+# indexes, lists of figures. Rewriting these produced exactly the junk a
+# reader complained about — stray lines like "Preface page 15" scattered
+# through the prose — because a list of titles and page numbers has no
+# argument to restate, and page numbers from the original are meaningless
+# against a re-paginated rewrite anyway. Detected here rather than asked
+# of the model: it's deterministic, and it saves the API call entirely.
+# Matched without anchors for the same reason as _TOC_LEADER: pdf.js
+# hands over a page as a single line, so "^...$" would never fire.
+_TOC_HEADING = re.compile(
+    r"\b(table of contents|list of (figures|tables|illustrations))\b",
+    re.IGNORECASE,
+)
+# A contents entry is a title, a run of leader dots, then a page number.
+# Deliberately NOT line-based: the page text arrives from pdf.js in the
+# browser, which returns a page as ONE line with no newlines at all. A
+# line-oriented version of this check was calibrated against pypdf (which
+# does emit newlines), passed its test, and then detected nothing
+# whatsoever in production. Matching the leader runs directly works on
+# either shape.
+#
+# Real PDFs also space the dots out (". . . . . 17", not "......17"), so
+# the dot run has to tolerate whitespace. Page numbers may be arabic or
+# roman, since front matter runs i, ix, xxiii.
+_TOC_LEADER = re.compile(
+    r"(?:\.\s*){3,}\s*(?:\d{1,4}|[ivxlc]{1,7})\b",
+    re.IGNORECASE,
+)
+MIN_TOC_ENTRIES = 5
+
+
+def looks_like_contents(text: str) -> bool:
+    """True for navigation pages — contents, index, list of figures.
+
+    These have no argument to restate, and their page numbers refer to the
+    original's pagination, which means nothing in a re-paginated rewrite.
+    Rewriting them scattered stray lines like "Preface page 15" through
+    the prose.
+    """
+    entries = len(_TOC_LEADER.findall(text))
+    if entries >= MIN_TOC_ENTRIES:
+        return True
+    # A heading plus even a couple of entries is conclusive.
+    return bool(_TOC_HEADING.search(text)) and entries >= 2
+
+
+# A short reply that announces it has nothing to say, rather than simply
+# saying nothing. Bounded by length so a genuine short rewrite that merely
+# contains the word "contents" is never discarded.
+_DECLINED = re.compile(
+    r"no (output|content|text)\b"
+    r"|nothing to (rewrite|translate|simplify)"
+    r"|this page (is|appears to be) (a |an )?(table of contents|index|blank)",
+    re.IGNORECASE,
+)
+MAX_DECLINE_LENGTH = 400
+
+
+def is_declined(rewrite: str) -> bool:
+    text = rewrite.strip()
+    return len(text) <= MAX_DECLINE_LENGTH and bool(_DECLINED.search(text))
+
+
 def process_chunk(client, chunk: dict) -> None:
     original_text = chunk["original_text"].strip()
     if len(original_text) < MIN_TEXT_LENGTH:
@@ -71,10 +135,23 @@ def process_chunk(client, chunk: dict) -> None:
             db.maybe_complete_job(conn, chunk["job_id"])
         print(f"[chunk {chunk['id']}] skipped (no extractable text, {len(original_text)} chars)", flush=True)
         return
+    if looks_like_contents(original_text):
+        with db.get_conn() as conn:
+            db.save_chunk_result(conn, chunk["id"], "", {}, None, 0)
+            db.maybe_complete_job(conn, chunk["job_id"])
+        print(f"[chunk {chunk['id']}] skipped (contents/index page)", flush=True)
+        return
     try:
         # One writer call. No judge, no fact-check, no retry loop — see
         # llm.py's module docstring for what that trades away and why.
         rewrite = llm.call_writer(client, chunk["original_text"])
+        if is_declined(rewrite):
+            # The model was asked to reply with nothing for a navigation
+            # page and instead explained itself — "(No output — this page
+            # is a table of contents...)". Observed for real. Shipping
+            # that puts the model's apology in the middle of the book, so
+            # treat it as the empty reply it was meant to be.
+            rewrite = ""
         with db.get_conn() as conn:
             # scores/approved stay in the schema but are no longer produced;
             # nothing grades a rewrite now.

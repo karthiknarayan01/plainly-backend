@@ -138,11 +138,44 @@ content to rewrite, say exactly that — do not invent a plausible-sounding
 passage to fill the gap. A rewrite of nothing is nothing; it is never a
 fabricated something.
 
+## Highlighting what matters
+
+The reader is skimming a long document and needs the important parts to
+catch the eye. Mark them with **double asterisks**, which render as bold:
+
+- The figures that carry the point — a revenue number, a growth rate, a
+  margin, a date a decision hangs on.
+- A term at the moment you define it, so the definition is findable
+  later: "**gross margin** — the share of each sales dollar left after
+  covering what it cost to make the product."
+- A conclusion the whole passage builds to, where there is one.
+
+Use it sparingly. Roughly **two to four** highlights on a typical page;
+a page where everything is bold has emphasised nothing. Never bold a
+whole sentence or paragraph — highlight the figure or the term itself,
+not the clause around it.
+
+Use no other formatting. No headings, no bullet lists, no italics, no
+tables — the reader renders plain prose, and anything else arrives as
+literal punctuation on the page.
+
 ## Structural and reference content
 
 Some pages aren't prose making an argument — a table of contents, an
-index, a glossary term list, a bare list of headings. Recognize these and
-handle them differently from the style rules below:
+index, a glossary term list, a bare list of headings.
+
+**If the page you are given is a table of contents, an index, or a list
+of figures, reply with nothing at all.** These are navigation for the
+printed book, not reading: their page numbers point at the original's
+pagination, which has nothing to do with where anything lands in your
+rewrite, so carrying them over drops stray lines like "Preface page 15"
+into the middle of the prose. An empty reply is the correct output.
+(The worker also detects most of these and skips them before they ever
+reach you; this is the backstop for the ones it misses.)
+
+For other structural content that IS worth keeping — a glossary, a
+labelled list that the surrounding prose refers to — handle it
+differently from the style rules below:
 
 - Keep every entry's number, label, and page number exactly as written.
   Do not paraphrase a title, do not "explain" what a section is about, do

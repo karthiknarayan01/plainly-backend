@@ -23,6 +23,9 @@ went from as many as 9 calls per page to exactly 1.
 from __future__ import annotations
 
 import os
+import threading
+import time
+from collections import deque
 from pathlib import Path
 
 from openai import OpenAI
@@ -78,6 +81,41 @@ def make_client() -> OpenAI:
     )
 
 
+# OpenRouter caps new accounts at 20 requests/minute for claude-sonnet-5
+# ("new-account-rpm"). With 8 worker lanes each taking ~25s per page the
+# natural rate is ~19/min — right on the cap — so bursts blew through it
+# and produced 55 real 429 failures on a single upload. With the retry
+# loop gone a 429 permanently loses that page, so this throttles every
+# writer call through one shared token bucket instead of relying on luck.
+# Set a little under the cap to leave room for the uneven arrival of 8
+# lanes finishing at once.
+REQUESTS_PER_MINUTE = int(os.environ.get("WRITER_REQUESTS_PER_MINUTE", "16"))
+_rate_lock = threading.Lock()
+_recent_calls: deque[float] = deque()
+
+
+def _throttle() -> None:
+    """Blocks until issuing another request stays under REQUESTS_PER_MINUTE."""
+    while True:
+        with _rate_lock:
+            now = time.monotonic()
+            while _recent_calls and now - _recent_calls[0] >= 60.0:
+                _recent_calls.popleft()
+            if len(_recent_calls) < REQUESTS_PER_MINUTE:
+                _recent_calls.append(now)
+                return
+            # Sleep until the oldest call in the window ages out.
+            wait = 60.0 - (now - _recent_calls[0]) + 0.05
+        time.sleep(max(wait, 0.05))
+
+
+# A 429 is not a failed page, it's a "come back shortly" — but only if
+# something actually comes back. Retried here with backoff because losing
+# a page from a 200-page book over a transient limit is the worst possible
+# outcome for a reader.
+RATE_LIMIT_RETRIES = 4
+
+
 def build_writer_user_message(original_text: str) -> str:
     return (
         "Below is a page from a document. Treat it as the full document and "
@@ -88,17 +126,12 @@ def build_writer_user_message(original_text: str) -> str:
     )
 
 
-def call_writer(client: OpenAI, original_text: str) -> str:
-    system_prompt = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": build_writer_user_message(original_text)},
-    ]
+def _create(client: OpenAI, messages: list[dict]):
     try:
         # Some models default to a visible "thinking" pass even for a plain
         # rewrite — confirmed by testing, that burns ~20x the output tokens
         # for no benefit here.
-        resp = client.chat.completions.create(
+        return client.chat.completions.create(
             model=WRITER_MODEL, messages=messages, temperature=0.3,
             max_tokens=MAX_WRITER_OUTPUT_TOKENS,
             extra_body={"reasoning": {"enabled": False}},
@@ -108,8 +141,29 @@ def call_writer(client: OpenAI, original_text: str) -> str:
         # ("Reasoning is mandatory for this endpoint"). Retry without it.
         if "reasoning" not in str(exc).lower():
             raise
-        resp = client.chat.completions.create(
+        return client.chat.completions.create(
             model=WRITER_MODEL, messages=messages, temperature=0.3,
             max_tokens=MAX_WRITER_OUTPUT_TOKENS,
         )
-    return (resp.choices[0].message.content or "").strip()
+
+
+def call_writer(client: OpenAI, original_text: str) -> str:
+    system_prompt = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": build_writer_user_message(original_text)},
+    ]
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        _throttle()
+        try:
+            resp = _create(client, messages)
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as exc:
+            is_rate_limited = "429" in str(exc) or "rate limit" in str(exc).lower()
+            if not is_rate_limited or attempt == RATE_LIMIT_RETRIES:
+                raise
+            # The cap is per minute, so waiting out most of a window is the
+            # only thing that actually helps; a few hundred ms of backoff
+            # would just burn another attempt.
+            time.sleep(min(20.0 * (attempt + 1), 60.0))
+    raise RuntimeError("unreachable")  # loop either returns or raises
