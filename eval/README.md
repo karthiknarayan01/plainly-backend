@@ -333,6 +333,79 @@ leniency bias, not the bias itself. Decomposition (1) or self-consistency
 than another rubric-wording patch would — worth trying next, not yet
 done.
 
+**Did (1) and (2) together — decomposition + self-consistency — plus a
+fresh model comparison in the new fact-check role.** Split fidelity out
+of the combined judge into a dedicated `judge_factcheck_system_prompt.md`
+call (`call_fact_check` / `call_fact_check_consistent` in both
+`llm.py` and this file), reused several of the reverted rubric fixes
+from above now that they have nothing else to compete with for the
+model's attention, and added self-consistency (call it N times, take the
+median fidelity — not the strictest; see below). Two real bugs surfaced
+and got fixed along the way, not just tuned:
+
+- The new fact-check prompt's named-entity check initially flagged a
+  hand-written *good* example as fabricating "big cloud companies" — a
+  plain paraphrase of the original's own "major cloud providers," naming
+  no specific real company. Fixed the prompt to require an actual
+  identifiable name, not just a wording change, before counting something
+  as a Gain.
+- The same test also flagged "NVIDIA" itself as a fabricated company
+  name — because the specific `original_excerpt` snippet in that example
+  never happened to include the company's name within the trimmed
+  excerpt, even though the whole passage is obviously about NVIDIA. This
+  is an eval-example artifact, not a prompt bug: 11 of the 24 examples
+  had this same gap (a real financial-filing chunk almost always repeats
+  the company name somewhere on the page; a hand-trimmed excerpt doesn't
+  always). Fixed by adding the company name into each affected
+  `original_excerpt`, matching what a real production chunk would
+  actually contain.
+- First self-consistency implementation took the *strictest* (lowest)
+  fidelity score across N runs. Confirmed by testing this is wrong: it
+  amplifies a single run's false positive (one hallucinated violation
+  out of three independent passes) exactly as much as it would catch a
+  single run's real miss, since "take the min" has no way to tell those
+  two cases apart. Switched to the *median*, which is robust to a single
+  outlier run in either direction.
+
+Result on the full 24-example oracle run, `deepseek/deepseek-chat-v3.1`
+doing fact-checking (same model as the judge, self-consistency n=3):
+**still 9/24 (38%)** — identical to the pre-decomposition baseline.
+Splitting the call out and adding self-consistency, on their own, did not
+close the gap; avg oracle fidelity actually dropped further (5.0 vs. the
+earlier 7.54), meaning the oracle itself got stricter under its own
+two-call setup by more than production did.
+
+Ran a direct fact-check-model comparison next, reusing the 24 already-
+generated rewrites and the oracle's own fidelity verdicts as ground
+truth (cheap: no writer/judge/oracle recalculation needed, just N
+fact-check calls per candidate) against `moonshotai/kimi-k2-thinking`,
+`deepseek/deepseek-r1-0528`, `minimax/minimax-m2`, and
+`qwen/qwen3-next-80b-a3b-thinking`. Stopped partway through (6-7 of 24
+examples) once the pattern was clear: `deepseek/deepseek-r1-0528`
+matched the oracle's fidelity verdict 5/6 times with zero errors —
+clearly ahead of `minimax/minimax-m2` (1/6, consistently too lenient,
+same failure mode as deepseek-chat-v3.1) and the two "-thinking" models
+(both frequently returned empty/malformed responses — OpenRouter
+rejects the reasoning-disable param outright for these, same as GPT-5,
+and they appear to sometimes exhaust the output token budget on internal
+reasoning before writing any visible JSON).
+
+**Current fact-check model: `deepseek/deepseek-r1-0528`**, self-
+consistency dialed to **n=1** (effectively off) rather than the n=3 used
+during testing — confirmed by testing that R1 cannot disable its
+reasoning step (mandatory ~2,300 reasoning tokens on a short passage in
+one real measurement, $0.0065/call), so it already does more internal
+verification per single call than a non-reasoning model would, and 3x
+calls on an already-slow reasoning model measurably slows down real
+document processing for a benefit not yet confirmed at scale. This is a
+first real improvement over the 38% baseline, not a fully re-validated
+number — the full 24-example oracle comparison with r1-0528 as the
+actual fact-check model (rather than the partial 6-7 example spot check
+above) has not been run yet. Re-run `oracle` against this configuration
+before trusting the gap is meaningfully closed, and reconsider raising
+`FACTCHECK_CONSISTENCY_N` back up if quality still looks underwhelming
+in practice.
+
 ## Split
 
 Once there are enough real examples (rule of thumb: aim for at least

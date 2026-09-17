@@ -24,6 +24,7 @@ class RetryState(TypedDict):
     rewrite: str
     feedback: Optional[str]
     judge_result: dict
+    scores: dict
     attempt_count: int
     approved: bool
 
@@ -37,14 +38,32 @@ def _write_node(client: OpenAI):
 
 def _judge_node(client: OpenAI):
     def node(state: RetryState) -> dict:
-        result = llm.call_judge(client, state["original_text"], state["rewrite"])
-        # Recomputed from the judge's own scores rather than trusting its
-        # self-reported `approved` field — see llm.compute_approved.
-        scores = llm.get_scores(result)
+        # Two separate calls: fidelity (fact-check, self-consistent) and
+        # everything else (understanding/readability/explanation/style).
+        # Kept apart deliberately — see judge_factcheck_system_prompt.md
+        # for why a single combined call proved unreliable.
+        judge_result = llm.call_judge(client, state["original_text"], state["rewrite"])
+        fact_check_result = llm.call_fact_check_consistent(client, state["original_text"], state["rewrite"])
+        scores = llm.get_scores(judge_result, fact_check_result)
+        # Merged for storage/feedback — the writer's retry needs to see
+        # both kinds of issues (a dropped number just as much as a missing
+        # analogy) to fix everything in one pass rather than ping-ponging
+        # between the two calls' separate complaints across attempts.
+        combined_result = {
+            **judge_result,
+            "loss": fact_check_result.get("loss", []),
+            "gain": fact_check_result.get("gain", []),
+            "distortion": fact_check_result.get("distortion", []),
+            "fidelity_verdict": fact_check_result.get("verdict_reason"),
+        }
+        feedback_parts = [
+            v for v in (fact_check_result.get("verdict_reason"), judge_result.get("verdict_reason")) if v
+        ]
         return {
-            "judge_result": result,
+            "judge_result": combined_result,
+            "scores": scores,
             "approved": llm.compute_approved(scores),
-            "feedback": result.get("verdict_reason"),
+            "feedback": " ".join(feedback_parts) or None,
         }
     return node
 
@@ -72,6 +91,7 @@ def run_generate_judge_retry(client: OpenAI, original_text: str) -> RetryState:
         "rewrite": "",
         "feedback": None,
         "judge_result": {},
+        "scores": {},
         "attempt_count": 0,
         "approved": False,
     }

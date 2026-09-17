@@ -74,7 +74,7 @@ def process_chunk(client, chunk: dict) -> None:
         return
     try:
         result = run_generate_judge_retry(client, chunk["original_text"])
-        scores = llm.get_scores(result["judge_result"])
+        scores = result["scores"]
         with db.get_conn() as conn:
             db.save_chunk_result(
                 conn,

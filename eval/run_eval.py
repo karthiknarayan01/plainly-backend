@@ -81,6 +81,18 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # this tradeoff against a closed frontier model periodically.
 DEFAULT_WRITER_MODEL = "qwen/qwen3-235b-a22b-2507"
 DEFAULT_JUDGE_MODEL = "deepseek/deepseek-chat-v3.1"
+# Fidelity now comes from a separate fact-check call — see
+# services/worker/llm.py's fuller rationale for why deepseek-r1-0528,
+# not deepseek-chat-v3.1 (the judge model), was picked here specifically:
+# a direct comparison against the oracle's own fidelity verdicts on the
+# same 24 rewrites found it matching 5/6 sampled cases with zero errors.
+DEFAULT_FACTCHECK_MODEL = "deepseek/deepseek-r1-0528"
+# Dialed down to 1 (off) — see services/worker/llm.py's fuller rationale:
+# a reasoning model already does substantial internal reasoning per call
+# and cannot disable it, so self-consistency matters less here than for a
+# non-reasoning judge, and 3x calls measurably slows down an already-slow
+# model. Override with --factcheck-consistency to test raising it again.
+DEFAULT_FACTCHECK_CONSISTENCY_N = 1
 REQUEST_TIMEOUT_SECONDS = 120
 
 
@@ -205,11 +217,10 @@ def parse_judge_json(raw: str) -> dict:
 MAX_JUDGE_OUTPUT_TOKENS = 6000
 
 
-def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) -> dict:
-    system_prompt = load_prompt(PROMPTS_DIR / "judge_model_system_prompt.md")
+def _call_judge_model(client: OpenAI, model: str, system_prompt: str, user_message: str) -> dict:
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": build_judge_user_message(original_excerpt, rewrite)},
+        {"role": "user", "content": user_message},
     ]
     try:
         resp = client.chat.completions.create(
@@ -229,13 +240,52 @@ def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) 
     return parse_judge_json(resp.choices[0].message.content)
 
 
+_JUDGE_PROMPT = load_prompt(PROMPTS_DIR / "judge_model_system_prompt.md")
+_FACTCHECK_PROMPT = load_prompt(PROMPTS_DIR / "judge_factcheck_system_prompt.md")
+
+
+def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) -> dict:
+    """understanding/readability/explanation/style — no fidelity, no
+    approval. See call_fact_check_consistent for fidelity."""
+    return _call_judge_model(client, model, _JUDGE_PROMPT, build_judge_user_message(original_excerpt, rewrite))
+
+
+def call_fact_check(client: OpenAI, model: str, original_excerpt: str, rewrite: str) -> dict:
+    """A single fact-check pass: {"fidelity": int, "loss": [...], "gain":
+    [...], "distortion": [...], "verdict_reason": str}."""
+    return _call_judge_model(client, model, _FACTCHECK_PROMPT, build_judge_user_message(original_excerpt, rewrite))
+
+
+def call_fact_check_consistent(client: OpenAI, model: str, original_excerpt: str, rewrite: str, n: int) -> dict:
+    """Runs call_fact_check n times and takes the MEDIAN fidelity score
+    (not the minimum — mirrors services/worker/llm.py's fuller rationale:
+    "strictest wins" amplifies a single run's false positive just as much
+    as it catches a real miss). Loss/gain/distortion lists are still a
+    union of all n runs — cheap to over-include in feedback text, unlike
+    the numeric score which directly drives the approve/reject decision."""
+    results = [call_fact_check(client, model, original_excerpt, rewrite) for _ in range(n)]
+    fidelities = sorted(int(r.get("fidelity", 0)) for r in results)
+    median_fidelity = fidelities[len(fidelities) // 2]
+    base = next(r for r in results if int(r.get("fidelity", 0)) == median_fidelity)
+    merged = dict(base)
+    merged["fidelity"] = median_fidelity
+    for key in ("loss", "gain", "distortion"):
+        seen: list[str] = []
+        for r in results:
+            for item in r.get(key, []) or []:
+                if item not in seen:
+                    seen.append(item)
+        merged[key] = seen
+    return merged
+
+
 SCORE_DIMENSIONS = ("fidelity", "understanding", "readability", "explanation", "style", "overall")
 
 
-def violation_count(judge_result: dict) -> int:
+def violation_count(combined_result: dict) -> int:
     total = 0
     for key in ("loss", "gain", "distortion", "confusing_terms"):
-        value = judge_result.get(key, [])
+        value = combined_result.get(key, [])
         if isinstance(value, list):
             total += len(value)
         elif value and str(value).strip().lower() not in ("none", ""):
@@ -243,23 +293,49 @@ def violation_count(judge_result: dict) -> int:
     return total
 
 
-def get_scores(judge_result: dict) -> dict:
-    """Scores dict with all 5 dimensions present, defaulting missing ones to 0
-    (a malformed/missing scores block should read as a failure, not silently
-    drop out of an average)."""
-    raw = judge_result.get("scores", {})
-    return {dim: int(raw.get(dim, 0)) for dim in SCORE_DIMENSIONS}
+def compute_overall(scores: dict) -> int:
+    """A plain average of the four judged dimensions, capped by fidelity
+    and understanding — mirrors services/worker/llm.py."""
+    avg = round((scores["understanding"] + scores["readability"] + scores["explanation"] + scores["style"]) / 4)
+    overall = avg
+    if scores["fidelity"] < 7:
+        overall = min(overall, scores["fidelity"])
+    if scores["understanding"] < 7:
+        overall = min(overall, scores["understanding"])
+    return overall
+
+
+def get_scores(judge_result: dict, fact_check_result: dict) -> dict:
+    """Combines the two calls' outputs into the full SCORE_DIMENSIONS
+    dict, computing `overall` here rather than trusting either call's
+    self-report — mirrors services/worker/llm.py."""
+    judge_scores = judge_result.get("scores", {})
+    scores = {
+        "fidelity": int(fact_check_result.get("fidelity", 0)),
+        "understanding": int(judge_scores.get("understanding", 0)),
+        "readability": int(judge_scores.get("readability", 0)),
+        "explanation": int(judge_scores.get("explanation", 0)),
+        "style": int(judge_scores.get("style", 0)),
+    }
+    scores["overall"] = compute_overall(scores)
+    return scores
+
+
+def merge_judge_results(judge_result: dict, fact_check_result: dict) -> dict:
+    """For storage/printing: one dict carrying both calls' qualitative
+    fields, mirroring retry_graph.py's combined_result."""
+    return {
+        **judge_result,
+        "loss": fact_check_result.get("loss", []),
+        "gain": fact_check_result.get("gain", []),
+        "distortion": fact_check_result.get("distortion", []),
+        "fidelity_verdict": fact_check_result.get("verdict_reason"),
+    }
 
 
 def compute_approved(scores: dict) -> bool:
-    """Recomputed from the judge's scores rather than trusting its
-    self-reported `approved` field — mirrors services/worker/llm.py.
-    Confirmed in production the judge can self-report approved=true while
-    writing down fidelity below its own stated threshold; the eval runner
-    needs to apply the same override or its calibration/benchmark numbers
-    would disagree with what the production worker actually does.
-    understanding >= 8 added alongside fidelity — see llm.compute_approved
-    and judge_model_system_prompt.md's "understanding" dimension."""
+    """Deterministic approval from the combined scores — never trusted as
+    a self-report from either call. Mirrors services/worker/llm.py."""
     return scores["overall"] >= 8 and scores["fidelity"] >= 9 and scores["understanding"] >= 8
 
 
@@ -285,6 +361,8 @@ def default_report_path(mode: str) -> Path:
 def run_calibrate(args: argparse.Namespace) -> int:
     client = make_client()
     judge_model = args.judge_model
+    factcheck_model = args.factcheck_model
+    n = args.factcheck_consistency
     examples = load_examples(args.only, args.limit)
 
     results = []
@@ -292,11 +370,14 @@ def run_calibrate(args: argparse.Namespace) -> int:
     good_scores_all, bad_scores_all = [], []
     for ex in examples:
         print(f"[{ex['id']}] judging good_rewrite...", flush=True)
-        good = call_judge(client, judge_model, ex["original_excerpt"], ex["good_rewrite"])
+        good_judge = call_judge(client, judge_model, ex["original_excerpt"], ex["good_rewrite"])
+        good_fc = call_fact_check_consistent(client, factcheck_model, ex["original_excerpt"], ex["good_rewrite"], n)
         print(f"[{ex['id']}] judging bad_rewrite...", flush=True)
-        bad = call_judge(client, judge_model, ex["original_excerpt"], ex["bad_rewrite"])
+        bad_judge = call_judge(client, judge_model, ex["original_excerpt"], ex["bad_rewrite"])
+        bad_fc = call_fact_check_consistent(client, factcheck_model, ex["original_excerpt"], ex["bad_rewrite"], n)
 
-        good_scores, bad_scores = get_scores(good), get_scores(bad)
+        good, bad = merge_judge_results(good_judge, good_fc), merge_judge_results(bad_judge, bad_fc)
+        good_scores, bad_scores = get_scores(good_judge, good_fc), get_scores(bad_judge, bad_fc)
         good_scores_all.append(good_scores)
         bad_scores_all.append(bad_scores)
         good_approved, bad_approved = compute_approved(good_scores), compute_approved(bad_scores)
@@ -316,8 +397,8 @@ def run_calibrate(args: argparse.Namespace) -> int:
         print(f"    good: {format_scores(good_scores)} approved={good_approved}")
         print(f"    bad:  {format_scores(bad_scores)} approved={bad_approved}")
         if not example_pass:
-            print(f"    good verdict: {good.get('verdict_reason')}")
-            print(f"    bad verdict:  {bad.get('verdict_reason')}")
+            print(f"    good verdict: {good.get('verdict_reason')} | {good.get('fidelity_verdict')}")
+            print(f"    bad verdict:  {bad.get('verdict_reason')} | {bad.get('fidelity_verdict')}")
 
         results.append({
             "id": ex["id"], "pass": example_pass,
@@ -347,6 +428,8 @@ def run_benchmark(args: argparse.Namespace) -> int:
     client = make_client()
     writer_model = args.writer_model
     judge_model = args.judge_model
+    factcheck_model = args.factcheck_model
+    n = args.factcheck_consistency
     examples = load_examples(args.only, args.limit)
 
     results = []
@@ -357,16 +440,18 @@ def run_benchmark(args: argparse.Namespace) -> int:
         fresh_rewrite = call_writer(client, writer_model, ex)
         print(f"[{ex['id']}] judging...", flush=True)
         judge_result = call_judge(client, judge_model, ex["original_excerpt"], fresh_rewrite)
+        fact_check_result = call_fact_check_consistent(client, factcheck_model, ex["original_excerpt"], fresh_rewrite, n)
+        combined = merge_judge_results(judge_result, fact_check_result)
 
-        scores = get_scores(judge_result)
+        scores = get_scores(judge_result, fact_check_result)
         approved = compute_approved(scores)
-        vcount = violation_count(judge_result)
+        vcount = violation_count(combined)
         approved_count += int(approved)
         all_scores.append(scores)
 
         print(f"[{ex['id']}] {'APPROVED' if approved else 'REJECTED'} {format_scores(scores)} (violations={vcount})")
         if not approved:
-            print(f"    verdict: {judge_result.get('verdict_reason')}")
+            print(f"    verdict: {combined.get('verdict_reason')} | {combined.get('fidelity_verdict')}")
 
         results.append(
             {
@@ -375,16 +460,16 @@ def run_benchmark(args: argparse.Namespace) -> int:
                 "scores": scores,
                 "violation_count": vcount,
                 "fresh_rewrite": fresh_rewrite,
-                "judge_result": judge_result,
+                "judge_result": combined,
                 "reference_good_rewrite": ex["good_rewrite"],
             }
         )
 
-    n = len(examples)
-    avg_violations = sum(r["violation_count"] for r in results) / n if n else 0.0
-    approval_rate = approved_count / n if n else 0.0
+    total = len(examples)
+    avg_violations = sum(r["violation_count"] for r in results) / total if total else 0.0
+    approval_rate = approved_count / total if total else 0.0
     avg_scores = average_scores(all_scores)
-    print(f"\nBenchmark: {approved_count}/{n} approved ({approval_rate:.0%}). Avg violations: {avg_violations:.2f}")
+    print(f"\nBenchmark: {approved_count}/{total} approved ({approval_rate:.0%}). Avg violations: {avg_violations:.2f}")
     print(f"Avg scores: {format_scores({d: round(avg_scores[d], 2) for d in SCORE_DIMENSIONS})}")
 
     report = {
@@ -392,6 +477,8 @@ def run_benchmark(args: argparse.Namespace) -> int:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "writer_model": writer_model,
         "judge_model": judge_model,
+        "factcheck_model": factcheck_model,
+        "factcheck_consistency": n,
         "approval_rate": approval_rate,
         "avg_violations": avg_violations,
         "avg_scores": avg_scores,
@@ -419,6 +506,8 @@ def run_oracle(args: argparse.Namespace) -> int:
     client = make_client()
     writer_model = args.writer_model
     judge_model = args.judge_model
+    factcheck_model = args.factcheck_model
+    n = args.factcheck_consistency
     oracle_model = args.oracle_model
     examples = load_examples(args.only, args.limit)
 
@@ -429,14 +518,22 @@ def run_oracle(args: argparse.Namespace) -> int:
         print(f"[{ex['id']}] generating rewrite ({writer_model})...", flush=True)
         fresh_rewrite = call_writer(client, writer_model, ex)
 
-        print(f"[{ex['id']}] production judge ({judge_model})...", flush=True)
-        prod_result = call_judge(client, judge_model, ex["original_excerpt"], fresh_rewrite)
-        prod_scores = get_scores(prod_result)
+        print(f"[{ex['id']}] production judge ({judge_model} + {factcheck_model} x{n})...", flush=True)
+        prod_judge = call_judge(client, judge_model, ex["original_excerpt"], fresh_rewrite)
+        prod_fc = call_fact_check_consistent(client, factcheck_model, ex["original_excerpt"], fresh_rewrite, n)
+        prod_combined = merge_judge_results(prod_judge, prod_fc)
+        prod_scores = get_scores(prod_judge, prod_fc)
         prod_approved = compute_approved(prod_scores)
 
+        # Oracle uses the same two-call architecture (for a fair,
+        # apples-to-apples comparison against the production two-call
+        # setup) but no self-consistency — a strong closed model doesn't
+        # need three passes to catch what it catches in one.
         print(f"[{ex['id']}] oracle judge ({oracle_model})...", flush=True)
-        oracle_result = call_judge(client, oracle_model, ex["original_excerpt"], fresh_rewrite)
-        oracle_scores = get_scores(oracle_result)
+        oracle_judge = call_judge(client, oracle_model, ex["original_excerpt"], fresh_rewrite)
+        oracle_fc = call_fact_check(client, oracle_model, ex["original_excerpt"], fresh_rewrite)
+        oracle_combined = merge_judge_results(oracle_judge, oracle_fc)
+        oracle_scores = get_scores(oracle_judge, oracle_fc)
         oracle_approved = compute_approved(oracle_scores)
 
         agrees = prod_approved == oracle_approved
@@ -448,21 +545,21 @@ def run_oracle(args: argparse.Namespace) -> int:
         print(f"[{ex['id']}] production: {'APPROVED' if prod_approved else 'REJECTED'} {format_scores(prod_scores)}")
         print(f"[{ex['id']}] oracle:     {'APPROVED' if oracle_approved else 'REJECTED'} {format_scores(oracle_scores)}{flag}")
         if not agrees:
-            print(f"    oracle verdict: {oracle_result.get('verdict_reason')}")
+            print(f"    oracle verdict: {oracle_combined.get('verdict_reason')} | {oracle_combined.get('fidelity_verdict')}")
 
         results.append({
             "id": ex["id"],
             "fresh_rewrite": fresh_rewrite,
-            "production": {"scores": prod_scores, "approved": prod_approved, "judge_result": prod_result},
-            "oracle": {"scores": oracle_scores, "approved": oracle_approved, "judge_result": oracle_result},
+            "production": {"scores": prod_scores, "approved": prod_approved, "judge_result": prod_combined},
+            "oracle": {"scores": oracle_scores, "approved": oracle_approved, "judge_result": oracle_combined},
             "agree": agrees,
         })
 
-    n = len(examples)
-    agreement_rate = agree / n if n else 0.0
+    total = len(examples)
+    agreement_rate = agree / total if total else 0.0
     avg_prod = average_scores(prod_all_scores)
     avg_oracle = average_scores(oracle_all_scores)
-    print(f"\nOracle validation: {agree}/{n} agree on approve/reject ({agreement_rate:.0%}).")
+    print(f"\nOracle validation: {agree}/{total} agree on approve/reject ({agreement_rate:.0%}).")
     print(f"Avg production judge scores: {format_scores({d: round(avg_prod[d], 2) for d in SCORE_DIMENSIONS})}")
     print(f"Avg oracle scores:           {format_scores({d: round(avg_oracle[d], 2) for d in SCORE_DIMENSIONS})}")
     if agreement_rate < 1.0:
@@ -473,6 +570,8 @@ def run_oracle(args: argparse.Namespace) -> int:
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "writer_model": writer_model,
         "judge_model": judge_model,
+        "factcheck_model": factcheck_model,
+        "factcheck_consistency": n,
         "oracle_model": oracle_model,
         "agreement_rate": agreement_rate,
         "avg_production_scores": avg_prod,
@@ -495,6 +594,8 @@ def main() -> None:
     common.add_argument("--limit", type=int, default=None, help="only run the first N matching examples")
     common.add_argument("--out", default=None, help="path to write the JSON report (default: eval/results/<timestamp>-<mode>.json)")
     common.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help=f"OpenRouter model slug for the judge (default: {DEFAULT_JUDGE_MODEL})")
+    common.add_argument("--factcheck-model", default=DEFAULT_FACTCHECK_MODEL, help=f"OpenRouter model slug for the fact-check call (default: {DEFAULT_FACTCHECK_MODEL})")
+    common.add_argument("--factcheck-consistency", type=int, default=DEFAULT_FACTCHECK_CONSISTENCY_N, help=f"self-consistency runs for the fact-check call, median fidelity wins (default: {DEFAULT_FACTCHECK_CONSISTENCY_N})")
 
     cal = sub.add_parser("calibrate", parents=[common], help="check the judge model against hand-labeled good/bad pairs")
 
