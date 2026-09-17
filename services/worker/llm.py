@@ -208,14 +208,25 @@ def build_judge_user_message(original_text: str, rewrite: str) -> str:
     )
 
 
-# A single-page rewrite has no legitimate reason to need more than this —
-# confirmed necessary by testing: without a cap, one OpenRouter provider
-# route for qwen/qwen3-235b-a22b-2507 ignored the reasoning-disable param
-# and requested a 131,072-token completion (its entire context window)
-# for a single short passage, failing outright. This is a real-money and
-# real-reliability guard against exactly that class of runaway request on
-# a real user's document, not just a benchmark convenience.
-MAX_WRITER_OUTPUT_TOKENS = 2000
+# A cap is necessary, confirmed by testing: without one, an OpenRouter
+# provider route for qwen/qwen3-235b-a22b-2507 ignored the
+# reasoning-disable param and requested a 131,072-token completion (its
+# entire context window) for a single short passage, failing outright.
+# This is a real-money and real-reliability guard against that class of
+# runaway request on a real user's document.
+#
+# Raised 2000 -> 4000 on 2026-09-17, to match the cap the current
+# writer+prompt combination was actually measured under. The prompt now
+# explicitly tells the writer to come out LONGER than its source (that
+# change took mean expansion 1.59 -> 2.09 and eliminated compressed
+# pages), and the page-scale eval that validated it ran at 4000. Leaving
+# production at 2000 would mean shipping a config no benchmark covered:
+# the largest rewrite observed in those runs was ~1,550 tokens, only 23%
+# under the old ceiling, and on a denser page than the eval set contains
+# (its longest is 3,349 chars) an earnings page expanding 3.7x would have
+# been truncated mid-sentence. A cap only bounds the worst case; it costs
+# nothing when unused, since billing is on tokens actually generated.
+MAX_WRITER_OUTPUT_TOKENS = 4000
 MAX_JUDGE_OUTPUT_TOKENS = 6000
 
 
