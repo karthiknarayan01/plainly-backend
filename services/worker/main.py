@@ -1,7 +1,7 @@
-# Real worker: claims a pending chunk via SKIP LOCKED, runs the
-# generate->judge->retry LangGraph loop (retry_graph.py) using OpenRouter
-# (llm.py), saves the result, and marks the parent job complete once every
-# chunk is done.
+# Real worker: claims a pending chunk via SKIP LOCKED, runs ONE writer
+# call against OpenRouter (llm.py), saves the result, and marks the parent
+# job complete once every chunk is done. The generate->judge->retry loop
+# this used to run was removed 2026-09-17 — see llm.py's docstring.
 #
 # The HTTP health server is unrelated to the actual work — it exists only
 # because Cloud Run kills a service that never binds $PORT, which is what
@@ -15,7 +15,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import db
 import llm
-from retry_graph import run_generate_judge_retry
 
 POLL_INTERVAL_SECONDS = 2
 # Each chunk's work is almost entirely waiting on OpenRouter (network
@@ -73,19 +72,15 @@ def process_chunk(client, chunk: dict) -> None:
         print(f"[chunk {chunk['id']}] skipped (no extractable text, {len(original_text)} chars)", flush=True)
         return
     try:
-        result = run_generate_judge_retry(client, chunk["original_text"])
-        scores = result["scores"]
+        # One writer call. No judge, no fact-check, no retry loop — see
+        # llm.py's module docstring for what that trades away and why.
+        rewrite = llm.call_writer(client, chunk["original_text"])
         with db.get_conn() as conn:
-            db.save_chunk_result(
-                conn,
-                chunk["id"],
-                result["rewrite"],
-                scores,
-                result["approved"],
-                result["attempt_count"],
-            )
+            # scores/approved stay in the schema but are no longer produced;
+            # nothing grades a rewrite now.
+            db.save_chunk_result(conn, chunk["id"], rewrite, {}, None, 1)
             db.maybe_complete_job(conn, chunk["job_id"])
-        print(f"[chunk {chunk['id']}] completed approved={result['approved']} attempts={result['attempt_count']} overall={scores.get('overall')}", flush=True)
+        print(f"[chunk {chunk['id']}] completed ({len(rewrite)} chars)", flush=True)
     except Exception as exc:
         print(f"[chunk {chunk['id']}] FAILED: {exc}", flush=True)
         try:

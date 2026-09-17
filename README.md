@@ -27,8 +27,8 @@ Primary focus areas:
 
 ```
 services/api/       FastAPI app — job creation, status, SSE stream over Postgres
-services/worker/    claims jobs (SKIP LOCKED), runs the generate→judge→retry
-                    loop (LangGraph) against OpenRouter, saves results
+services/worker/    claims jobs (SKIP LOCKED), makes ONE writer call per
+                    page against OpenRouter, saves results
 prompts/            system prompts for the writing model and the judge model
 eval/               (original, good rewrite, bad rewrite, why) examples —
                     used both as DPO training data and as the held-out
@@ -50,9 +50,32 @@ infrastructure was removed entirely.
 
 ## Model evaluation
 
-> **2026-09-17 — current configuration, chosen on a page-scale benchmark.**
-> All three production models are open-weight:
-> **writer `deepseek/deepseek-v4.1-flash`**, judge and fact-check
+> **2026-09-17 (latest) — the judge is gone and the writer is Claude.**
+> By explicit request the feedback models were removed entirely: there is
+> now **one model and one call per page**, `anthropic/claude-sonnet-5` as
+> writer, with no judge, no fact-check and no retry loop.
+>
+> What that costs, stated plainly: nothing now checks a rewrite before a
+> reader sees it. The judge was the only thing verifying that every figure
+> survived and that nothing was invented, and in the benchmark below this
+> writer did fabricate three company names on one page. `eval/` still
+> measures all of it offline, and that is now the only place quality is
+> checked at all.
+>
+> What it buys: a page costs one OpenRouter round-trip instead of three,
+> and the retry loop's up-to-three attempts collapse to one — up to 9x
+> fewer calls per page on a long document, which is what makes a 200-page
+> upload finish in minutes.
+>
+> The section below documents the open-weight benchmark that ran before
+> this change. It remains the best evidence available about writer
+> quality, and `deepseek/deepseek-v4.1-flash` remains the strongest
+> open-weight option measured (100% figure preservation, zero
+> fabrications) if the open-source requirement is ever reinstated.
+>
+> **Superseded (kept for the benchmark data):** all three production
+> models being open-weight —
+> writer `deepseek/deepseek-v4.1-flash`, judge and fact-check
 > `deepseek/deepseek-chat-v3.1`.
 >
 > The writer was picked by benchmarking 8 candidates on 10 **real full
