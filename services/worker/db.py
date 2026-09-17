@@ -13,11 +13,18 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import contextmanager
 
 import psycopg
 
 _connector = None
+# main.py runs CONCURRENT_WORKERS claim loops in parallel, so the lazy
+# init below is reachable from several threads at once. Without this lock
+# each of them can see `_connector is None` and build its own Connector —
+# the original code sidestepped that by constructing one at import time,
+# and the lazy version has to hold the same guarantee explicitly.
+_connector_lock = threading.Lock()
 
 
 def _connect():
@@ -28,9 +35,11 @@ def _connect():
     # Imported lazily so local runs don't need the GCP dependency at all.
     global _connector
     if _connector is None:
-        from google.cloud.sql.connector import Connector
+        with _connector_lock:
+            if _connector is None:  # re-checked: another thread may have won
+                from google.cloud.sql.connector import Connector
 
-        _connector = Connector()
+                _connector = Connector()
     instance_connection_name = os.environ["DATABASE_INSTANCE_CONNECTION_NAME"]
     return _connector.connect(
         instance_connection_name,

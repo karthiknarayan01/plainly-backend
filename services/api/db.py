@@ -11,11 +11,17 @@ a local Postgres for end-to-end testing. Same rationale as the worker's.
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 
 import psycopg
 
 _connector = None
+# FastAPI serves these sync endpoints from a thread pool, so the lazy
+# init below can be entered concurrently. The original constructed one
+# Connector at import time; the lazy version needs this lock to keep the
+# same "exactly one" guarantee. Same reasoning as services/worker/db.py.
+_connector_lock = threading.Lock()
 
 
 def _connect():
@@ -26,9 +32,11 @@ def _connect():
     # Imported lazily so local runs don't need the GCP dependency at all.
     global _connector
     if _connector is None:
-        from google.cloud.sql.connector import Connector
+        with _connector_lock:
+            if _connector is None:  # re-checked: another thread may have won
+                from google.cloud.sql.connector import Connector
 
-        _connector = Connector()
+                _connector = Connector()
     instance_connection_name = os.environ["DATABASE_INSTANCE_CONNECTION_NAME"]
     return _connector.connect(
         instance_connection_name,
