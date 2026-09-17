@@ -1,0 +1,48 @@
+id: "013-microsoft-azure-cloud-conflation"
+source_type: earnings_statement
+source: eval/sources/microsoft-q4-fy2026.md
+
+original_excerpt: >
+  Annual revenue surpassed $331 billion, up 18%. Microsoft Cloud revenue
+  exceeded $214 billion, up 27%. Azure revenue grew 43% in the quarter,
+  driven by demand and efficiency gains, with continued acceleration
+  expected in H1 FY27.
+
+good_rewrite: >
+  For the full year, Microsoft brought in more than $331 billion — 18%
+  more than the year before. Within that, "Microsoft Cloud" — a bundle
+  that includes Azure and several other cloud products — made up more
+  than $214 billion of the total, up 27% for the year.
+
+  Azure by itself (Microsoft's cloud computing service, the part
+  companies rent computing power and storage from) grew even faster in
+  just this one quarter: 43%, driven by more customers using it and by
+  Microsoft running it more efficiently. Microsoft expects that growth to
+  keep speeding up in the first half of next fiscal year.
+
+good_rewrite_rationale: >
+  Keeps three distinct figures cleanly separated that a rewrite could
+  easily blur together: full-year total revenue ($331B, +18%), full-year
+  Microsoft Cloud revenue ($214B, +27%, a subset of the total, not a
+  separate business), and Azure's single-quarter growth rate (43%, not
+  even the same time period as the other two numbers). Explicitly flags
+  that Microsoft Cloud is a bundle containing Azure, not a synonym for
+  it — the original's own numbers only make sense once a reader knows
+  these are three different, nested measurements, not three ways of
+  saying the same thing.
+
+bad_rewrite: >
+  Microsoft had a great year, bringing in $331 billion, with its cloud
+  business growing 43% thanks to Azure. Cloud revenue crossed $214
+  billion for the year.
+
+bad_rewrite_rationale: >
+  This is the precise-term-substitution failure: "Azure grew 43%" was a
+  single-quarter figure, but the rewrite attaches it to "cloud business"
+  and implies it's the year's overall cloud growth rate — the real
+  annual Microsoft Cloud growth rate was 27%, not 43%. A reader walks
+  away thinking Microsoft's cloud business grew 43% for the year, which
+  is a different, larger, and wrong number. The sentence reads smoothly
+  and every individual figure ($331B, 43%, $214B) technically appeared in
+  the original — but stitched together this way, it asserts something
+  the source doesn't support.

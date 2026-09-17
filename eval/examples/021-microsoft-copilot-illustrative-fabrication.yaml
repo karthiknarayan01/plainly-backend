@@ -1,0 +1,43 @@
+id: "021-microsoft-copilot-illustrative-fabrication"
+source_type: earnings_statement
+source: eval/sources/microsoft-q4-fy2026.md
+
+original_excerpt: >
+  Microsoft 365 Copilot paid seats surpassed 30 million; net seat adds
+  more than doubled quarter-over-quarter; user satisfaction scores
+  doubled over the last three quarters.
+
+good_rewrite: >
+  More than 30 million paid "seats" — meaning individual people whose
+  employer is paying for them to use Microsoft's AI assistant, Copilot,
+  built into Microsoft 365 — are now active. The number of brand-new
+  seats added this quarter was more than double what was added the
+  quarter before, meaning growth isn't just continuing, it's speeding up.
+  And of the people using it, how satisfied they say they are has
+  doubled over the past three quarters — so it's not only growing
+  faster, people who use it are also liking it more than they used to.
+
+good_rewrite_rationale: >
+  Keeps all three figures precise (30 million seats, seat-add growth
+  "more than doubled" quarter-over-quarter, satisfaction "doubled" over
+  three quarters) and explains "seats" without inventing which
+  companies or industries are adopting it — the original never names a
+  single customer, and the rewrite correctly doesn't either.
+
+bad_rewrite: >
+  Microsoft's AI assistant, Copilot, is taking off — imagine big
+  companies like Coca-Cola or Walmart rolling it out to thousands of
+  employees. Paid seats topped 30 million, and both growth and user
+  satisfaction have been climbing fast.
+
+bad_rewrite_rationale: >
+  Invents specific named companies (Coca-Cola, Walmart) as illustrative
+  examples of Copilot adopters — the original never names a single
+  customer, so this is a fabrication dressed as illustration, the same
+  pattern as a real production miss found elsewhere in this eval set
+  (see 012). A reader has no way to tell this is a hypothetical guess
+  rather than a disclosed fact. Also vaguely restates two distinct,
+  specific growth figures ("more than doubled quarter-over-quarter" seat
+  adds, "doubled over the last three quarters" satisfaction) as one
+  blurred "climbing fast," losing the fact that two different metrics
+  over two different time windows were both reported.

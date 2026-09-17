@@ -1,0 +1,37 @@
+id: "020-reddit-guidance-range"
+source_type: earnings_statement
+source: eval/sources/reddit-q2-2026.md
+
+original_excerpt: >
+  Q3 2026 guidance: Revenue $860-870 million; Adjusted EBITDA $385-395
+  million.
+
+good_rewrite: >
+  For the next quarter, Reddit told investors what it expects to happen,
+  giving a range rather than one exact number, since nobody can predict
+  the future precisely. It expects revenue somewhere between $860 million
+  and $870 million, and Adjusted EBITDA — a profit measure that leaves
+  out certain costs like interest, taxes, and the gradual loss of value
+  in equipment — somewhere between $385 million and $395 million.
+
+good_rewrite_rationale: >
+  Preserves both ranges exactly as ranges (not collapsed into a single
+  midpoint number, which would misrepresent the actual guidance given)
+  and briefly explains "Adjusted EBITDA" rather than leaving it as
+  unexplained jargon — this is a short passage where the temptation is to
+  simplify "$860-870 million" into "about $865 million," which loses the
+  fact that management gave a specific band, not a point estimate.
+
+bad_rewrite: >
+  Reddit expects around $865 million in revenue and about $390 million in
+  Adjusted EBITDA next quarter.
+
+bad_rewrite_rationale: >
+  Collapses both guidance ranges into single midpoint figures ($860-870M
+  → "$865 million," $385-395M → "$390 million") — this is a Distortion,
+  not a harmless simplification: a range communicates a company's actual
+  uncertainty about its own near-term results, and a reader seeing only
+  "$865 million" has no way to know the real guidance was a $10 million
+  band, not a specific prediction. Also never explains what Adjusted
+  EBITDA means, leaving a reader without background lost on what the
+  number even measures.

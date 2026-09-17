@@ -1,0 +1,49 @@
+id: "018-tesla-segment-breakdown"
+source_type: earnings_statement
+source: eval/sources/tesla-q2-2026.md
+
+original_excerpt: >
+  Total revenue $28.236 billion, +26% Y/Y — first quarter Tesla has
+  crossed $100 billion in trailing-twelve-month revenue. Automotive
+  revenue: $20.516 billion (+23%). Services and Other: $4.58 billion
+  (+50%), all-time record gross profit of $648 million at 14% gross
+  margin. Energy: $3.14 billion (+13%).
+
+good_rewrite: >
+  Tesla brought in $28.236 billion total this quarter, 26% more than a
+  year earlier. That's enough that, looking at the last full year of
+  revenue added up, Tesla has now crossed $100 billion for the first time
+  ever.
+
+  Cars are still most of that: $20.516 billion from selling vehicles,
+  up 23%. A smaller but fast-growing piece, "Services and Other" — things
+  like repairs, used car sales, and insurance — brought in $4.58 billion,
+  up 50%, and made more actual profit on those sales than Tesla ever has
+  before in this category: $648 million, which works out to 14 cents of
+  profit for every dollar of Services revenue. The remaining piece,
+  Tesla's energy business (solar panels and battery storage), brought in
+  $3.14 billion, up 13%.
+
+good_rewrite_rationale: >
+  Preserves all four dollar figures and growth rates (total $28.236B
+  +26%, Automotive $20.516B +23%, Services $4.58B +50%, Energy $3.14B
+  +13%), the "$100 billion trailing-twelve-month" milestone, and the
+  Services segment's specific record profit figure and margin ($648M at
+  14%) rather than folding it into a generic "did well" statement — this
+  is the kind of secondary, more detailed number a rewrite is tempted to
+  drop for brevity, but it's a specific, named record the original chose
+  to call out.
+
+bad_rewrite: >
+  Tesla had a strong quarter with $28 billion in total revenue, up 26%,
+  driven mainly by car sales and growing services and energy businesses.
+
+bad_rewrite_rationale: >
+  Drops every segment-level dollar figure (Automotive $20.516B, Services
+  $4.58B, Energy $3.14B), their individual growth rates, and the "$100
+  billion trailing-twelve-month" milestone entirely — replacing four
+  specific, sourced numbers with the vague "driven mainly by car sales
+  and growing services and energy businesses." Also loses the Services
+  segment's record $648 million profit at 14% margin, a specific
+  highlighted achievement in the original that's now gone without a
+  trace (Loss).

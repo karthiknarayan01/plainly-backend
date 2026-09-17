@@ -1,0 +1,54 @@
+id: "017-tesla-margin-type-conflation"
+source_type: earnings_statement
+source: eval/sources/tesla-q2-2026.md
+
+original_excerpt: >
+  Total GAAP gross margin 16.8% (-41bps Y/Y). Automotive gross margin
+  16.9%, or 16.3% excluding regulatory credits — down from 19.2% in Q1
+  2026. Operating income $398 million, down 57% Y/Y; operating margin
+  narrowed to 1.4%.
+
+good_rewrite: >
+  Tesla reports margin in more than one way, and they measure different
+  things, so it's worth keeping them separate.
+
+  Across the whole company, gross margin — the share of revenue left
+  after covering the direct cost of making what was sold — was 16.8%,
+  down slightly (0.41 percentage points) from a year ago. Looking just at
+  cars, that figure was a bit higher, 16.9%, or 16.3% if you strip out
+  money Tesla got from selling pollution credits to other automakers.
+  That's down from 19.2% just one quarter earlier.
+
+  A different number entirely — operating margin — looks at what's left
+  after also subtracting costs like R&D and running the company day to
+  day, not just the direct cost of making cars. That number was much
+  thinner: only 1.4%, and operating income itself (the dollar amount, not
+  the percentage) was $398 million, down 57% from a year ago. Gross
+  margin and operating margin measure different slices of the business,
+  which is why they're such different numbers even though they're both
+  called "margin."
+
+good_rewrite_rationale: >
+  Keeps four separate, easily-confused margin figures cleanly
+  distinguished: total GAAP gross margin (16.8%), automotive gross margin
+  (16.9%/16.3%), the Q1 comparison (19.2%), and operating margin (1.4%,
+  with operating income $398M) — and explicitly explains why gross margin
+  and operating margin are different measurements rather than two ways of
+  stating the same thing, which is exactly the distinction a rewrite
+  could blur by calling everything just "margin" or "profit margin."
+
+bad_rewrite: >
+  Tesla's profit margin came in at 16.8% this quarter, though it dropped
+  to 1.4% when accounting for total operating income, which fell 57%
+  from a year ago.
+
+bad_rewrite_rationale: >
+  This is the precise-term-substitution failure: gross margin (16.8%)
+  and operating margin (1.4%) are two different measurements of two
+  different things, not a before-and-after of the same number "when
+  accounting for" something — the phrasing implies a single margin figure
+  that changes once you factor in operating income, which misrepresents
+  what these two percentages actually are. It also drops the automotive-
+  specific figures (16.9%/16.3%, the 19.2% comparison) entirely, losing
+  the actual quarter-over-quarter automotive margin story the original is
+  making a point of.

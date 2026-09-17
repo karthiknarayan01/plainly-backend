@@ -1,0 +1,55 @@
+id: "016-alphabet-capital-allocation-jargon"
+source_type: earnings_statement
+source: eval/sources/alphabet-q2-2026.md
+
+original_excerpt: >
+  Raised $49.6 billion via equity issuance in June 2026. Established a
+  $40.0 billion At-the-Market program (unutilized as of June 30). Issued
+  $20.3 billion in senior unsecured notes.
+
+good_rewrite: >
+  Alphabet did three things to raise money this quarter, and they're
+  different from each other in an important way.
+
+  First, it raised $49.6 billion by selling new shares of its own stock
+  to investors — a company essentially selling small ownership pieces of
+  itself for cash.
+
+  Second, it set up something called an "At-the-Market" program, sized
+  at up to $40.0 billion — think of it as pre-approved permission to sell
+  more shares gradually over time, whenever it chooses. As of the end of
+  June, Alphabet hadn't actually sold any shares through this program
+  yet; it had only set the option up.
+
+  Third, it borrowed $20.3 billion by issuing bonds called "senior
+  unsecured notes" — Alphabet promising to pay this money back over time,
+  with interest, to whoever buys the bonds. "Senior" means these lenders
+  get paid back before some other creditors if something ever went
+  wrong; "unsecured" means there's no specific piece of property backing
+  the promise.
+
+good_rewrite_rationale: >
+  Preserves all three distinct transactions and their exact dollar
+  figures ($49.6B equity issuance, $40.0B ATM program capacity, $20.3B
+  senior unsecured notes), explains the jargon in each (equity issuance,
+  At-the-Market program, senior unsecured notes) without collapsing the
+  three into a single vague "raised money" statement, and crucially keeps
+  the "unutilized as of June 30" detail — the ATM program is a standing
+  option, not money actually raised yet, and losing that distinction
+  would misrepresent how much cash Alphabet has actually brought in this
+  way versus how much it's merely authorized to raise later.
+
+bad_rewrite: >
+  Alphabet raised about $110 billion this quarter through stock sales and
+  borrowing to fund its growth.
+
+bad_rewrite_rationale: >
+  Collapses three separate, differently-structured transactions into one
+  summed total ($49.6B + $40.0B + $20.3B ≈ $110B) that misrepresents what
+  actually happened — the $40.0 billion ATM program was explicitly
+  "unutilized" (not yet used) as of the reporting date, so adding it to
+  money genuinely already raised is a real Distortion, not just a
+  simplification. It also drops every specific jargon term (equity
+  issuance, At-the-Market program, senior unsecured notes) without
+  explaining any of them, leaving a reader with a single large number and
+  no sense of what kind of financial activity it actually represents.

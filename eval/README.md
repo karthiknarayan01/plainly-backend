@@ -14,7 +14,7 @@ One illustrative example (`examples/000-illustrative.yaml`), clearly
 marked as synthetic — written to show the schema working, not as real
 training data. It should not be used for training or scoring.
 
-Nine real examples. Each targets a different failure mode:
+24 real examples. Each targets a specific failure mode:
 
 | # | Company/source | Failure mode it targets |
 |---|---------|--------------------------|
@@ -27,6 +27,30 @@ Nine real examples. Each targets a different failure mode:
 | 007 | AI Engineering (book), tokenization | losing an explanatory analogy; fabricating an unstated technical detail ("during pretraining") |
 | 008 | Inference Engineering (book), table of contents | structural/reference content (page numbers, section titles) mishandled as if it were prose — real production failure, not synthesized |
 | 009 | Synthetic, isolated | leaked meta-commentary/preamble text ("Here's the rewritten passage...") shipped verbatim to the reader — also a real production failure |
+| 010 | NVIDIA | GAAP vs. non-GAAP figures merged into one invented "average" |
+| 011 | NVIDIA | dropping a guidance caveat ("excludes China data center revenue") that changes what the forecast means |
+| 012 | NVIDIA | fabrication dressed as illustration — a generic "major cloud providers" replaced with named real companies inside "imagine..." framing |
+| 013 | Microsoft | conflating a single-quarter growth rate (Azure, 43%) with a different full-year figure (Microsoft Cloud, 27%) |
+| 014 | Microsoft | dropping a forward-looking caveat (segment restructuring affects historical comparisons) |
+| 015 | Alphabet | precise-term substitution — operating cash flow relabeled as "free cash flow," a different, smaller, sometimes-negative figure |
+| 016 | Alphabet | collapsing three distinct financing transactions (one of them not-yet-utilized) into a single misleading total |
+| 017 | Tesla | conflating two different margin measurements (gross margin vs. operating margin) as if they were the same number |
+| 018 | Tesla | dropping segment-level figures (Automotive/Services/Energy) in favor of a vague summary |
+| 019 | Reddit | precise-term substitution — operating cash flow relabeled as free cash flow; ARPU left unexplained |
+| 020 | Reddit | collapsing a guidance range into a single invented midpoint |
+| 021 | Microsoft | fabrication dressed as illustration — invented named customers (Coca-Cola, Walmart) for a product that names no customers |
+| 022 | Alphabet | dropping the specific evidence behind a CEO quote, keeping only the sentiment |
+| 023 | Inference Engineering (book) | precise-term substitution in a technical domain — TTFT and TPS (two different stage-specific metrics) merged into one |
+| 024 | Inference Engineering (book) | reversing which of two components is actually larger — a magnitude/ordering distortion |
+
+010, 011, 012, 013, 015, 017, 019, 021, 023, and 024 were added specifically
+to get multiple independent instances of the two failure patterns an
+oracle-validation run (`run_eval.py oracle`) found the production judge
+missing repeatedly: fabrication dressed as an illustrative analogy using
+real named entities, and a precise technical term swapped for a similar-
+but-not-equivalent everyday word. See "Oracle mode and what it found"
+below for why a single instance of each wasn't enough to reliably measure
+whether a fix actually worked.
 
 006 and 007 are the first technical-book examples — `good_rewrite` for
 both is the user's own commissioned rewrite of the chapter (not
@@ -289,5 +313,20 @@ number rather than one that swings ~11 points per flipped example.
 
 Once there are enough real examples (rule of thumb: aim for at least
 ~30–50 to start), split into `train/` (used for DPO) and `test/` (held
-out, never trained on, used only to score changes) — not created yet
-since there's only the one illustrative file so far.
+out, never trained on, used only to score changes) — not created yet.
+24 real examples exist as of this writing (up from 9), most of that
+growth specifically targeting the two failure patterns from the "Oracle
+mode" section above rather than general diversity — still short of the
+~30–50 target, and worth continuing to grow, especially the general
+diversity side (new companies, more book sources, more structural-
+content variants) rather than only the two patterns already well-covered.
+
+**Calibration on the full 24-example set** (`google/deepseek-chat-v3.1`
+judge): 21/24 pass. Two of the three failures (011, 012) are the same
+benign pattern already noted for 004/005 — the judge correctly rejects
+the hand-written `bad_rewrite` but also declines to fully approve the
+hand-written `good_rewrite`, because the stricter `understanding`
+threshold added later wants more bridging density than those two
+good_rewrites happened to pack in. The third (008) is the same
+pre-existing table-of-contents judge miss documented above. None of the
+three are new example-writing mistakes.

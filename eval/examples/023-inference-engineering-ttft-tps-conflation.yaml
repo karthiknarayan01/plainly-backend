@@ -1,0 +1,84 @@
+id: "023-inference-engineering-ttft-tps-conflation"
+source_type: technical_book
+source: >
+  Real user-uploaded PDF, "Inference Engineering," section 2.4.2 (LLM
+  Inference Bottlenecks). Sourced from the same real production job as
+  008/009 (job f0081b63, chunk 65) — original_excerpt is the actual
+  extracted PDF text, including its line-break/ligature artifacts
+  ("roofl ine", "hard- ware's"), not cleaned up, since that's the real
+  input the pipeline actually receives.
+
+original_excerpt: >
+  2.4.2 LLM Inference Bottlenecks 63 Figure 2.13: A roofl ine chart shows
+  the switch from memory to compute bottleneck based on arithmetic
+  intensity. Plotting against the roofl ine model reveals if the
+  algorithm is: • Compute bound: When the arithmetic intensity is higher
+  than the hard- ware's ops:byte ratio and hits the horizontal
+  performance ceiling, it's compute bound. • Memory bound: When the
+  arithmetic intensity is lower than the hard- ware's ops:byte ratio and
+  hits the diagonal bandwidth ceiling, it's memory bound. To find a
+  bottleneck, look at arithmetic intensity for the most expensive
+  calculations in a system. For inference, one such calculation is
+  attention. 2.4.2 LLM Inference Bottlenecks LLM inference has two
+  phases: • Prefill: Determines the time to first token (TTFT) and is
+  compute-bound. • Decode: Determines the tokens per second (TPS) and is
+  memory-bound.
+
+good_rewrite: >
+  When a computer runs an AI model, it can get stuck waiting in one of
+  two different ways, and figuring out which one is happening tells you
+  what to fix.
+
+  Sometimes the computer's math chips are the bottleneck — they're busy
+  crunching numbers as fast as they can, and that's what's slowing things
+  down. This is called being "compute bound." Other times, the chips are
+  sitting idle, waiting for data to arrive from memory — like a fast cook
+  standing around because ingredients haven't reached the counter yet.
+  This is called being "memory bound." Engineers can measure something
+  called "arithmetic intensity" (roughly: how much calculating happens
+  per piece of data moved) to figure out which of these two is actually
+  the bottleneck for a given piece of work — for AI models that generate
+  text, one especially expensive calculation to check this way is called
+  "attention."
+
+  Generating text with an AI model happens in two separate stages, and
+  each one tends to hit a different one of these two bottlenecks. The
+  first stage figures out the very first word of the response — how long
+  that takes is called "time to first token," and this stage is usually
+  compute bound (limited by how fast the math chips can work). The second
+  stage produces the rest of the words one at a time — how many words per
+  second it can produce is called "tokens per second," and this stage is
+  usually memory bound (limited by how fast data can move, not by raw
+  calculating power).
+
+good_rewrite_rationale: >
+  Keeps both technical terms and their definitions distinct and correctly
+  paired: time to first token (TTFT) with the prefill stage and
+  compute-bound, tokens per second (TPS) with the decode stage and
+  memory-bound — these are two different measurements of two different
+  stages with two different bottleneck types, an easy set of pairings to
+  scramble. Explains "compute bound" and "memory bound" with a concrete
+  image (a cook waiting on ingredients) rather than just restating the
+  original's own abstract definition, and correctly keeps "arithmetic
+  intensity" and "attention" as the two supporting concepts the original
+  introduces, without inventing extra unstated detail about them.
+
+bad_rewrite: >
+  When an AI model responds to you, it goes through a startup phase and a
+  generation phase. The speed of the whole thing is called tokens per
+  second, and it's usually limited by how fast the computer's memory can
+  move data around rather than how fast it can calculate. Engineers can
+  check something called arithmetic intensity to see where the slowdown
+  is coming from.
+
+bad_rewrite_rationale: >
+  This is the precise-term-substitution failure in the technical-book
+  domain: TTFT and TPS are two distinct, separately-defined measurements
+  for two different stages (prefill and decode) with two different
+  bottleneck types (compute-bound vs. memory-bound) — the rewrite merges
+  them into a single "speed of the whole thing... called tokens per
+  second," which both misapplies the TPS term to the wrong scope and
+  drops TTFT and the prefill/compute-bound pairing entirely (Loss). It
+  also asserts memory-bound as true of "the whole thing," when the
+  original specifically says prefill is compute-bound and only decode is
+  memory-bound — a real Distortion of which stage has which bottleneck.

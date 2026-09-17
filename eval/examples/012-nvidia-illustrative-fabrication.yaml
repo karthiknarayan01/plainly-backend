@@ -1,0 +1,58 @@
+id: "012-nvidia-illustrative-fabrication"
+source_type: earnings_statement
+source: eval/sources/nvidia-q2-fy2027.md
+
+original_excerpt: >
+  Vera Rubin platform ramping to full production across major cloud
+  providers; Spectrum-6 switches deploying globally; Vera CPU launched
+  for AI agents; Groq 3 LPX in full production; multiple partnerships
+  announced toward $500 billion or more in AI infrastructure financing;
+  Blackwell leading MLPerf benchmarks.
+
+good_rewrite: >
+  NVIDIA shared several updates on its products this quarter. Its newest
+  computing system, called the Vera Rubin platform, is now being built
+  and shipped in large numbers, and companies that run cloud computing
+  services are starting to use it widely. NVIDIA also began rolling out
+  new networking hardware (Spectrum-6 switches) around the world, and
+  launched a new processor (the Vera CPU) built specifically for AI
+  systems that act on their own. Another product, called Groq 3 LPX, is
+  now also being produced at full scale.
+
+  NVIDIA announced several new business partnerships aimed at raising
+  $500 billion or more to build out AI computing infrastructure. And its
+  existing Blackwell chip continues to lead MLPerf, the industry's main
+  set of speed tests for AI hardware.
+
+good_rewrite_rationale: >
+  "Major cloud providers" stays exactly that — a category, not specific
+  named companies — because the original never names which providers are
+  involved. This is the deliberately-not-fabricated version of the exact
+  passage a real production run turned into "companies like Amazon or
+  Google," illustrating the fix directly: the generic reference can be
+  explained (what a cloud provider is/does) without inventing which
+  specific ones are meant. Every product name and the $500B figure are
+  preserved exactly.
+
+bad_rewrite: >
+  NVIDIA had a big quarter for new products. Its newest system, the Vera
+  Rubin platform, is now shipping at scale — imagine companies like
+  Amazon or Google buying these in bulk to power their cloud services.
+  NVIDIA also rolled out new networking hardware and a new AI-agent chip,
+  and announced partnerships aiming to raise half a trillion dollars for
+  AI infrastructure. Its Blackwell chip remains the fastest on record for
+  AI benchmarks.
+
+bad_rewrite_rationale: >
+  This is the exact real-world failure pattern (see eval/README.md's
+  oracle-validation writeup): the original says "major cloud providers,"
+  a generic, unnamed reference, and the rewrite replaces it with specific
+  real company names ("Amazon or Google") wrapped in "imagine..." framing.
+  The hedge doesn't neutralize it — a reader walks away believing NVIDIA
+  disclosed Amazon and Google specifically as customers, which the
+  original never said. This is a Gain regardless of how plausible or
+  illustrative it reads. Also drops the Groq 3 LPX product entirely
+  (Loss) and vaguely restates "$500 billion or more" as "half a
+  trillion dollars," which happens to be numerically equivalent here but
+  drops the "or more" — a real, if minor, precision loss on an
+  open-ended figure.
