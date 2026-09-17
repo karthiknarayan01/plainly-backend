@@ -309,6 +309,30 @@ take the strictest or majority verdict, trading cost for reliability;
 "Split" below, so agreement is measured on enough cases to be a stable
 number rather than one that swings ~11 points per flipped example.
 
+**Did (3) — 24-example oracle baseline, and a reframed diagnosis.**
+Re-ran `oracle` on the full 24-example set with the reverted (56%-on-9-
+examples) judge prompt: **9/24 agree (38%)**. This is a more reliable
+number than any of the 9-example runs above, and it's lower than the
+optimistic 56% — meaning that number was itself partly a lucky small
+sample, not a stable baseline.
+
+More important than the percentage: with 15 disagreements to look at
+instead of 4, the pattern is no longer "two narrow blind spots." The
+oracle scores lower than the production judge on almost every dimension,
+in almost every example — avg fidelity 9.29 (production) vs. 7.54
+(oracle), avg understanding 8.83 vs. 7.62, avg overall 8.58 vs. 7.04.
+That's a **systematic leniency gap**, not a couple of catchable bugs —
+production consistently grades about 1.5-2 points softer than the oracle
+across the whole rubric, on fidelity nuances (a dropped product name, a
+dropped citation, "net seat adds" quietly becoming "new users") just as
+much as on understanding. This explains why four rounds of narrow,
+single-pattern prompt patches (see above) never moved the needle and
+sometimes made it worse: each patch targeted one symptom of a broader
+leniency bias, not the bias itself. Decomposition (1) or self-consistency
+(2) above are more likely to actually address a systematic gap like this
+than another rubric-wording patch would — worth trying next, not yet
+done.
+
 ## Split
 
 Once there are enough real examples (rule of thumb: aim for at least
