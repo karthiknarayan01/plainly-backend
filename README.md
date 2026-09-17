@@ -76,35 +76,60 @@ be trusted to score anything else, so this runs before any other eval.
 `original_excerpt` fresh and has the judge score the real output — this
 is the actual quality measurement used to pick a writer.
 
-### How the judge scores a rewrite
+### How a rewrite gets scored — two separate calls, not one
 
-The judge model reads the original passage and a rewrite, and returns six
-0-10 scores plus lists of specific issues found (see
-`prompts/judge_model_system_prompt.md` for the full rubric with anchor
-descriptions for every score band):
+Judging is split into two independent model calls, not one combined
+call — see "Why two calls" below for why. Together they produce six 0-10
+scores (`services/worker/llm.py`'s `get_scores` combines them; neither
+call's own `approved`/`overall` self-report is trusted):
 
-- **fidelity** — is every claim, number, and fact from the original
-  actually present, unchanged, with nothing invented.
-- **understanding** — not "is the vocabulary simple" but "did a real
-  bridge (analogy, image, worked example) get built for every idea that
-  needed one," scored as an explicit ratio (ideas-with-a-bridge /
-  non-trivial ideas), not an impression.
-- **readability** — no unexplained jargon for a reader with no
-  background in the subject.
-- **explanation** — why/how, not just what; a claim explained beats a
-  claim merely stated.
-- **style** — short sentences, direct language, no hedging (mechanics
-  only — separate from `understanding`, which is about whether the ideas
-  actually land).
-- **overall** — holistic, but capped by `fidelity` and `understanding`
+- **fidelity** (`prompts/judge_factcheck_system_prompt.md`) — a
+  dedicated fact-check pass: is every claim, number, and fact from the
+  original actually present, unchanged, with nothing invented. Includes
+  explicit checks for fabrication dressed as an illustrative analogy
+  (a real company name standing in for a generic reference like "major
+  cloud providers") and for a precise term quietly swapped for a
+  similar-but-different one ("gross margin" → "profit"). Run with
+  self-consistency (`FACTCHECK_CONSISTENCY_N`, currently 1) — multiple
+  independent passes, median fidelity score wins, not the strictest
+  (testing showed "strictest wins" amplifies a single run's false
+  positive as much as it catches a real miss).
+- **understanding, readability, explanation, style**
+  (`prompts/judge_model_system_prompt.md`) — the "how well is this
+  taught and written" half. `understanding` in particular is not "is the
+  vocabulary simple" but "did a real bridge (analogy, image, worked
+  example) get built for every idea that needed one," scored as an
+  explicit ratio (ideas-with-a-bridge / non-trivial ideas), not an
+  impression.
+- **overall** — computed in code (`compute_overall`), a plain average of
+  the four judged dimensions capped by `fidelity` and `understanding`
   specifically: a rewrite can be a little plain and still ship, but not
   incomplete or incomprehensible.
 
-`approved` is **never** trusted from the judge's own self-report — it's
+`approved` is **never** trusted from either call's self-report — it's
 recomputed in code (`overall >= 8 AND fidelity >= 9 AND understanding >=
-8`) from the scores the judge already produced, after finding in
-production that a judge model can write down `fidelity: 7` and
-`approved: true` in the same response, contradicting its own stated rule.
+8`), after finding in production that a judge model can write down
+`fidelity: 7` and `approved: true` in the same response, contradicting
+its own stated rule.
+
+### Why two calls, not one
+
+The original design used one combined call for all six dimensions. An
+oracle-validation run (below) found it agreeing with a closed frontier
+model on approve/reject only 38% of the time across 24 real examples,
+with the disagreement spread across almost every dimension — a
+systematic leniency gap, not one or two fixable bugs. Splitting fidelity
+into its own dedicated call (nothing else competing for the model's
+attention) plus self-consistency didn't move that number on its own —
+still 38% with the same model doing fact-checking. What did help: a
+direct comparison of fact-check-only candidates against the oracle's own
+verdicts found `deepseek/deepseek-r1-0528` matching 5/6 sampled cases
+with zero errors, clearly ahead of the alternatives tried (see
+`eval/README.md` for the full comparison, including two open-source
+"-thinking" models that turned out too unreliable — frequent empty
+responses — to use in production regardless of accuracy). This is a
+first real improvement, not a fully re-validated number — see
+`eval/README.md`'s oracle section for what's confirmed vs. still open.
 
 ### Benchmark results
 
@@ -150,9 +175,18 @@ at **both** writing and judging. It isn't used for both: a judge sharing
 a model family with the writer risks self-preference bias (rating its
 own family's output more favorably) on every real-time production
 approve/retry decision. Deployed pairing: **`qwen/qwen3-235b-a22b-2507`
-as writer, `deepseek/deepseek-chat-v3.1` as judge** — a deliberate
-quality tradeoff (78% vs. 100% approval on the eval set) in exchange for
-that separation.
+as writer, `deepseek/deepseek-chat-v3.1` as judge, `deepseek/deepseek-
+r1-0528` as fact-checker** — a deliberate quality tradeoff (78% vs. 100%
+writer approval on the eval set) in exchange for that separation.
+
+**Cost**: measured directly, not estimated — one real fact-check call
+against `deepseek-r1-0528` cost $0.0065 (it cannot disable its reasoning
+step; ~2,300 of ~2,400 output tokens were mandatory reasoning). Scaled to
+a real 259-page book (the same one used throughout this investigation),
+the full pipeline — writer + judge + fact-check — comes to roughly **$5
+for the whole book**, versus roughly $0.33-$1.88 under earlier, cheaper
+configurations. Still trivial in absolute terms for the quality gained,
+but worth knowing precisely rather than assuming it's free.
 
 ### Oracle validation — checking the checker
 
@@ -163,17 +197,24 @@ default — and reports where they disagree, to answer "is our cheap judge
 actually trustworthy" with measured evidence instead of a one-time
 calibration run.
 
-First real run (all 9 examples): **5/9 agreement (56%)** on
-approve/reject. The most serious disagreement — production judge scored
-a fresh rewrite `fidelity: 10` (perfect) while the oracle rejected it at
-`fidelity: 6`, because the rewrite had **fabricated specific company
-names and technical details** (invented AWS/Google Cloud/Azure
-references, invented factory/server details) not present anywhere in the
-original passage. The production judge missed it entirely; the oracle
-caught it on the first try. This is real, measured evidence of what the
-open-source-only requirement costs in reliability — not grounds to
-override that requirement, but a gap worth monitoring by re-running
-`oracle` periodically, especially after any prompt or model change.
+First run (9 examples): 56% agreement — turned out to be partly a lucky
+small sample. Grown to 24 examples (per explicit request, specifically
+adding more instances of the failure patterns the first run surfaced)
+and re-run: **9/24 agreement (38%)**, a more statistically reliable
+number. The most serious individual disagreement in the first run —
+production judge scored a fresh rewrite `fidelity: 10` (perfect) while
+the oracle rejected it at `fidelity: 6` for **fabricated specific company
+names and technical details** not present anywhere in the original — but
+the bigger finding from the larger sample is that the oracle scores
+lower than production on almost every dimension, in almost every
+example, not just on a couple of catchable patterns. That's real,
+measured evidence of what the open-source-only requirement costs in
+reliability. Not grounds to override the requirement, but a gap worth
+monitoring by re-running `oracle` periodically, especially after any
+prompt or model change — see `eval/README.md` for the full history of
+what's been tried (decomposing the judge into two calls, self-
+consistency, and a fact-check model swap to `deepseek-r1-0528`) and
+what's still open.
 
 ## Status
 
