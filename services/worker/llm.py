@@ -115,7 +115,7 @@ def build_judge_user_message(original_text: str, rewrite: str) -> str:
 # real-reliability guard against exactly that class of runaway request on
 # a real user's document, not just a benchmark convenience.
 MAX_WRITER_OUTPUT_TOKENS = 2000
-MAX_JUDGE_OUTPUT_TOKENS = 3000
+MAX_JUDGE_OUTPUT_TOKENS = 6000
 
 
 def call_writer(client: OpenAI, original_text: str, feedback: str | None) -> str:

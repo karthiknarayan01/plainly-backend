@@ -202,7 +202,7 @@ def parse_judge_json(raw: str) -> dict:
     raise ValueError(f"judge did not return valid JSON:\n{raw}")
 
 
-MAX_JUDGE_OUTPUT_TOKENS = 3000
+MAX_JUDGE_OUTPUT_TOKENS = 6000
 
 
 def call_judge(client: OpenAI, model: str, original_excerpt: str, rewrite: str) -> dict:
