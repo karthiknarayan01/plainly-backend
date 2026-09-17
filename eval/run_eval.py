@@ -33,18 +33,35 @@ Usage:
   python eval/run_eval.py benchmark
   python eval/run_eval.py benchmark --only 001 --out eval/results/run1.json
   python eval/run_eval.py oracle
-  python eval/run_eval.py oracle --oracle-model openai/gpt-5
 
 Requires OPENROUTER_API_KEY (e.g. via a local .env file — see
-eval/README.md). Writer/judge model names default to
-qwen/qwen3-235b-a22b-2507 and deepseek/deepseek-chat-v3.1, both
-open-source per product requirement — override with --writer-model /
---judge-model to try others (e.g. a closed model for a one-off quality
-comparison; see eval/README.md's model-compare section). `oracle`'s own
-model defaults to anthropic/claude-sonnet-5 and is exempt from the
-open-source requirement by design — it exists specifically to check the
-open-source judge against a model with no incentive to share its blind
-spots.
+eval/README.md). Writer/judge/fact-check default to the open-source
+pairing documented in eval/README.md (qwen3-235b-a22b-2507 writer,
+deepseek-chat-v3.1 judge, deepseek-r1-0528 fact-check) — override any of
+--writer-model / --judge-model / --factcheck-model / --oracle-model to
+try others.
+
+2026-09-17: a full anthropic/claude-sonnet-5-for-everything candidate was
+tried and rejected here, not shipped — 8% approved on `benchmark` (a
+severe regression from this pairing's 78%), caused by claude-sonnet-5 as
+writer ignoring this prompt's "no meta-commentary" instruction and
+printing its planning process as visible output on nearly every example,
+plus claude-sonnet-5 as judge miscalibrating badly against the existing
+rubric (2/24 on `calibrate`, including scoring hand-labeled GOOD
+reference examples fidelity=0). See services/worker/llm.py and
+eval/README.md for the full writeup and the results files. Also ruled
+out: openai/gpt-5 as writer — it forces internal reasoning it can't
+disable, confirmed to eat the output token budget and produce a
+truncated or empty rewrite on real eval examples.
+
+The leaked-preamble part of that was a real, fixable prompt gap —
+writing_model_system_prompt.md now has an explicit output-boundary
+constraint, and a re-test confirmed it stops the leak. claude-sonnet-5
+still isn't the writer default, though: with the leak gone, what's left
+is a real fabrication tendency (invented specifics, dropped precision
+qualifiers) that landed it at 33% on a subset re-test — better than 8%,
+still behind this pairing's 78-100%. See services/worker/llm.py for the
+full current state.
 """
 
 from __future__ import annotations
@@ -67,25 +84,12 @@ RESULTS_DIR = SCRIPT_DIR / "results"
 PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# Both must be open-source per explicit product requirement — see the
-# fuller rationale in services/worker/llm.py, which this mirrors, and
-# eval/README.md for the full benchmark writeup. Short version:
-# deepseek/deepseek-chat-v3.1 is the single strongest open-source model
-# at BOTH writing and judging (especially the "understanding" dimension,
-# where qwen3-235b-a22b-2507 as judge barely discriminated flat-but-
-# correct output from genuinely taught output). Using it for both roles
-# would score highest but risks self-preference bias on every real-time
-# approve/retry decision, so writer and judge are kept as different
-# models: qwen3-235b-a22b-2507 as writer (best independent option),
-# deepseek-chat-v3.1 as judge. Use the `oracle` command below to validate
-# this tradeoff against a closed frontier model periodically.
+# Mirrors services/worker/llm.py, which has the full rationale and
+# 2026-09-17 history of what was tried and reverted. Reverted to the
+# validated open-source pairing while a fix for the writer's
+# leaked-preamble problem (see that file) is developed and re-tested.
 DEFAULT_WRITER_MODEL = "qwen/qwen3-235b-a22b-2507"
 DEFAULT_JUDGE_MODEL = "deepseek/deepseek-chat-v3.1"
-# Fidelity now comes from a separate fact-check call — see
-# services/worker/llm.py's fuller rationale for why deepseek-r1-0528,
-# not deepseek-chat-v3.1 (the judge model), was picked here specifically:
-# a direct comparison against the oracle's own fidelity verdicts on the
-# same 24 rewrites found it matching 5/6 sampled cases with zero errors.
 DEFAULT_FACTCHECK_MODEL = "deepseek/deepseek-r1-0528"
 # Dialed down to 1 (off) — see services/worker/llm.py's fuller rationale:
 # a reasoning model already does substantial internal reasoning per call

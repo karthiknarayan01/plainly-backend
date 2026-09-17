@@ -406,6 +406,70 @@ before trusting the gap is meaningfully closed, and reconsider raising
 `FACTCHECK_CONSISTENCY_N` back up if quality still looks underwhelming
 in practice.
 
+## 2026-09-17 update: open-source-only requirement dropped, but the closed-model swap didn't pan out
+
+Everything above this section documents real, measured work trying to
+close the gap between an open-source judge and a closed frontier one —
+that investigation is why `anthropic/claude-sonnet-5` was already the
+trusted oracle reference by the time this update happened, not an
+untested new pick. The conclusion at the time (**"Not grounds to
+override the requirement, but a gap worth monitoring"**, in the oracle
+section above) has since been overridden by explicit instruction: the
+open-source-only *requirement* for production writer/judge/fact-check is
+dropped, as a standing policy. **Production defaults themselves did not
+change, though** — the obvious swap (`anthropic/claude-sonnet-5` for all
+three roles) was tried against real API calls and didn't hold up:
+
+- First full 24-example `benchmark` run: **8% approved** (2/24), a severe
+  regression from this pairing's 78%. Root cause: claude-sonnet-5 as
+  writer ignored the prompt's "no meta-commentary" instruction and
+  printed its planning process as literal visible output — "Let me think
+  through what's actually in this passage before rewriting..." — on
+  nearly every example. Exactly the kind of defect a real user would call
+  "garbage." `eval/results/claude-writer-candidate-benchmark.json`.
+- Same-day `calibrate` run with claude-sonnet-5 as judge/fact-check: only
+  **2/24 passed**, including several hand-labeled GOOD reference examples
+  scored fidelity=0 — a real miscalibration against this rubric, not
+  noise. `eval/results/claude-judge-calibrate.json`.
+- Fixed the leak: `writing_model_system_prompt.md` now has an explicit
+  "the first word of your reply must be the first word of the rewrite"
+  constraint. Re-tested on a 6-example subset (writer=claude-sonnet-5,
+  judge=deepseek-chat-v3.1, the already-trusted judge) — **the leak is
+  completely gone**, understanding/readability/explanation/style all
+  landed 9-10. But a different real issue took its place: claude-sonnet-5
+  fabricates specifics more than the current writer does (invented
+  hardware specs, a fabricated fiscal year, dropped precision qualifiers
+  like "diluted" EPS), landing at **33% approved** (2/6) —
+  better than 8%, still well behind 78-100%.
+  `eval/results/claude-writer-promptfix-subset.json`.
+- Confirmed the prompt fix doesn't regress the actual production writer:
+  re-ran `benchmark` with defaults (qwen3-235b-a22b-2507 writer,
+  unaffected by a fix to the "no meta-commentary" instruction it was
+  already following) — 3/7 approved before an unrelated, pre-existing
+  `deepseek-r1-0528` fact-check flakiness (malformed JSON — the same
+  failure class already documented above for other reasoning models)
+  crashed the run. Consistent with historical performance, no regression.
+  `eval/results/current-production-with-promptfix.json`.
+
+**Net result:** `WRITER_MODEL`/`JUDGE_MODEL`/`FACTCHECK_MODEL` stayed on
+the validated open-source pairing (`services/worker/llm.py` has the full
+current rationale). The anti-preamble prompt fix was kept — it's a
+general hardening (the exact failure mode eval example 009 exists for),
+proven not to hurt the current pairing. Revisit a closed-model writer
+only if a prompt change specifically targeting the fabrication pattern
+above gets tested and shown to close that gap; don't re-adopt one on
+reliability grounds alone, since reliability was never really the
+blocker once the preamble leak was fixed — fidelity was.
+
+Separately, and likely the bigger real-world factor behind "the model
+just returns garbage" complaints: the OpenRouter account had hit its $10
+credit cap entirely (`total_credits: 10, total_usage: ~10.11`) partway
+through this investigation, which would make real production chunks fail
+outright (caught and marked `failed` by the worker, not silently
+corrupted — but still visibly broken jobs). The user topped up credits
+mid-session; this is worth checking first, before model quality, if this
+complaint resurfaces.
+
 ## Split
 
 Once there are enough real examples (rule of thumb: aim for at least

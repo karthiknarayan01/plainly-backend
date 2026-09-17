@@ -19,54 +19,61 @@ from openai import OpenAI
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# Both must be open-source (open-weight) models per explicit product
-# requirement — closed models are for benchmark comparison only, never
-# production. Picked from real benchmarks against the eval set
-# (eval/results/model-compare/, eval/README.md has the full writeup):
+# 2026-09-17: investigated switching production off the open-source-only
+# pairing per explicit instruction ("I really don't care now, just use a
+# much bigger but reliable and better model"), but the obvious swap —
+# anthropic/claude-sonnet-5 for writer AND judge AND fact-check — was
+# tried and REJECTED after real testing, not shipped: full 24-example
+# `benchmark` run scored 2/24 approved (8%, worse than the 78% open-
+# source baseline it would have replaced), root-caused to
+# claude-sonnet-5-as-writer ignoring this prompt's explicit "no
+# meta-commentary" instruction and printing its planning process as
+# literal visible output ("Let me think through what's actually in this
+# passage before rewriting...") on nearly every example — exactly the
+# kind of defect a real user would see and call "garbage." Separately,
+# claude-sonnet-5-as-judge/fact-check calibrated at only 2/24 against the
+# hand-labeled good/bad reference set, including scoring several
+# hand-labeled GOOD examples fidelity=0 — a real miscalibration against
+# this rubric, not noise. Full results:
+# eval/results/claude-writer-candidate-benchmark.json and
+# eval/results/claude-judge-calibrate.json.
 #
-# deepseek/deepseek-chat-v3.1 is the strongest open-source WRITER found
-# by a wide margin (100% approved, 0 avg violations, 9.44 avg
-# "understanding" score, judged independently by a different model) — but
-# it's also, by a wide margin, the strongest open-source JUDGE found at
-# the "understanding" dimension specifically (see that dimension's
-# history in judge_model_system_prompt.md): qwen/qwen3-235b-a22b-2507 as
-# judge barely discriminated flat-but-correct output from genuinely
-# taught output even after two rounds of rubric tightening, while
-# deepseek-chat-v3.1 as judge caught it immediately and matched a closed
-# frontier model's (claude-sonnet-5) verdict on the same case.
+# openai/gpt-5 was tried first as writer and rejected even earlier, on
+# reliability grounds: it forces internal reasoning it can't disable
+# ("Reasoning is mandatory for this endpoint and cannot be disabled"),
+# which ate the output token budget and produced a truncated rewrite then
+# an empty-response crash on consecutive real eval examples.
 #
-# Using deepseek-chat-v3.1 for both roles would be the single best-
-# scoring combination, but risks self-preference bias — a model judging
-# its own family's output more favorably — on every real-time production
-# approve/retry decision, not just an occasional spot check. Chose to
-# keep writer and judge as different models instead: qwen/qwen3-235b-
-# a22b-2507 as writer (the best remaining independent option: 78%
-# approved, 8.89 avg understanding under deepseek-chat-v3.1's own
-# scoring) and deepseek-chat-v3.1 as judge, accepting somewhat lower
-# writer quality than the single best-scoring pairing in exchange for
-# writer and judge never being the same model at decision time. The
-# `oracle` eval mode (eval/run_eval.py) exists to periodically validate
-# this whole pairing against a closed frontier model and should be
-# re-run if this tradeoff needs revisiting.
+# Follow-up: the writer's leaked-preamble problem turned out to be a real
+# prompt gap, not a hard model limitation — writing_model_system_prompt.md
+# now has an explicit "first word of your reply must be the first word of
+# the rewrite" constraint, and a re-test with claude-sonnet-5 as writer
+# confirmed the leak is gone (eval/results/claude-writer-promptfix-subset.json).
+# claude-sonnet-5 is STILL not the writer default, though: with the leak
+# fixed, what surfaced instead is a real fabrication tendency — invented
+# hardware specs, a fabricated fiscal year, dropped precision qualifiers —
+# landing at 33% approved on that same subset, still well behind this
+# pairing's 78-100%. That's a genuine quality gap for this specific task,
+# not a prompt bug, so it's not the writer here. The prompt fix itself IS
+# kept — it's a general hardening (the exact failure mode eval example
+# 009 exists for) confirmed not to regress this pairing's own performance
+# (eval/results/current-production-with-promptfix.json).
+#
+# Net result: defaults stay on the pairing that's actually validated for
+# this task. Revisit claude-sonnet-5 (or another closed model) as writer
+# only if a prompt change specifically targeting the fabrication pattern
+# gets tested and shown to close that gap — don't re-adopt it on
+# reliability grounds alone, since reliability was never really the
+# gating issue once the preamble leak was fixed.
 WRITER_MODEL = os.environ.get("WRITER_MODEL", "qwen/qwen3-235b-a22b-2507")
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "deepseek/deepseek-chat-v3.1")
-# Fidelity now comes from a separate, dedicated fact-check call rather
-# than the combined judge call above (see judge_factcheck_system_prompt.md
-# for why: an oracle-validation run found the combined judge agreeing with
-# a closed frontier model on approve/reject only 38% of the time on a
-# 24-example set, with the disagreement spread across almost every
-# dimension rather than concentrated in one fixable pattern — a
-# systematic leniency gap, not a couple of bugs). Splitting the call out
-# alone didn't close the gap (still 38% with deepseek-chat-v3.1 doing
-# fact-checking) — a direct comparison of fact-check-only candidates
-# against the oracle's own fidelity verdicts on the same 24 rewrites
-# found deepseek/deepseek-r1-0528 matching 5/6 sampled cases with zero
-# errors, clearly ahead of minimax/minimax-m2 (consistently too lenient,
-# 1/6) and moonshotai/kimi-k2-thinking + qwen/qwen3-next-80b-a3b-thinking
-# (both too unreliable — frequent empty responses, likely not respecting
-# the reasoning-disable param). See eval/README.md for the full writeup;
-# this is a first, real improvement, not a final answer — worth
-# re-running `oracle` against it before trusting the gap is closed.
+# Fidelity comes from a separate, dedicated fact-check call rather than
+# the combined judge call above — see judge_factcheck_system_prompt.md
+# for why a single combined call proved unreliable. deepseek-r1-0528 is
+# the fact-check model specifically (not deepseek-chat-v3.1, the judge
+# model): a direct comparison against the oracle's own fidelity verdicts
+# on the same 24 rewrites found it matching 5/6 sampled cases with zero
+# errors — see eval/README.md.
 FACTCHECK_MODEL = os.environ.get("FACTCHECK_MODEL", "deepseek/deepseek-r1-0528")
 # Self-consistency: call the fact-check model this many times and take
 # the MEDIAN fidelity score (see call_fact_check_consistent for why not

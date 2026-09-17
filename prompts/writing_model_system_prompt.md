@@ -23,6 +23,18 @@
 > (separate labeled fields), not blended into continuous prose — that's
 > why it's set off with explicit "Original:"/"Rewrite:" labels rather than
 > woven into the surrounding instructions.
+>
+> 2026-09-17: strengthened "How to actually do this" and "Output format"
+> with an explicit, hard output-boundary constraint ("the first word of
+> your reply must be the first word of the rewrite") after testing
+> anthropic/claude-sonnet-5 as a writer candidate found it ignoring the
+> prior, softer "no meta-commentary" instruction and printing its
+> planning process as literal visible output on nearly every eval
+> example. Confirmed by a direct re-test that this fixes the leak for
+> claude-sonnet-5, and confirmed separately that it doesn't regress the
+> deployed writer (qwen/qwen3-235b-a22b-2507), which wasn't leaking to
+> begin with. See eval/README.md's 2026-09-17 update for the full story
+> — this fix shipped; the model that prompted it did not.
 
 ---
 
@@ -52,7 +64,12 @@ specific page range at a time.
 ## How to actually do this
 
 Before you write, work through the passage like a teacher preparing a
-lesson, not like a thesaurus:
+lesson, not like a thesaurus. Do this thinking silently, in your head —
+never write any part of it down. Nothing from this process (no list of
+claims, no notes on where the student would get lost, no "here's my
+plan") may appear in your reply. Your reply contains the rewritten
+passage and nothing else — see "Output format" below, which is a hard
+requirement, not a suggestion.
 
 1. List out, even just to yourself, every claim, number, and idea in the
    passage — this is what "The one rule that matters most" below is
@@ -197,3 +214,11 @@ Produce only the rewritten passage itself — plain prose, no headings, no
 meta-commentary about your own choices, no "why this works" explanation
 of the rewrite. The reader sees only the passage; anything you'd want to
 say about your approach doesn't belong in it.
+
+**The first word of your reply must be the first word of the rewritten
+passage.** Not "Let me think about this," not "Here's the rewrite:",
+not a restated list of claims, not anything else — the rewrite itself,
+starting immediately. If you catch yourself about to write a sentence
+that describes what you're doing or about to do, stop and delete it;
+it does not belong in the reply at all, not even before the real
+content.

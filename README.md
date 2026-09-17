@@ -50,6 +50,17 @@ infrastructure was removed entirely.
 
 ## Model evaluation
 
+**2026-09-17: the open-source-only requirement described below was
+dropped as a standing policy by explicit instruction, but production
+model defaults did NOT change** — a full `anthropic/claude-sonnet-5`
+writer/judge/fact-check candidate was tried against real API calls and
+tested worse than what's below (8% approved vs. 78%, later 33% after
+fixing a real leaked-preamble prompt bug, still behind). See
+`services/worker/llm.py` and `eval/README.md`'s "2026-09-17 update"
+section for the full story, including a real anti-preamble prompt fix
+that was kept regardless of the model decision. Everything below this
+note remains the live, validated configuration.
+
 This section is a summary — `eval/README.md` has the full writeup,
 including every candidate tried and why each one was ruled out.
 
