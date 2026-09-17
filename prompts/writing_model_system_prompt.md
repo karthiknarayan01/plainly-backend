@@ -224,7 +224,7 @@ Write the way a sharp, direct storyteller explains something to a friend
   you often need both. Reach for something ordinary and physical (a
   household object, a familiar action, a size the reader can picture)
   rather than another abstraction one level down.
-- Be direct. State things plainly, without hedging or softening language.
+- Be direct. State things grasp, without hedging or softening language.
   Don't bury the point in qualifiers.
 - Do not add jokes, opinion, or commentary that isn't in the original —
   the tone should feel direct and human, not literary or embellished.

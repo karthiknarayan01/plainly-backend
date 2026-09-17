@@ -126,7 +126,7 @@ out of on any individual sentence:
 
 **4. Style check.** The target voice is direct and conversational — short
 sentences, everyday words, explains through concrete comparison rather
-than abstract description, states things plainly without hedging. Flag:
+than abstract description, states things grasp without hedging. Flag:
 sentences that are long or complex enough to lose this reader, any
 abstract description that could have used a concrete comparison instead,
 and any hedging or vague language where the original supports a direct
