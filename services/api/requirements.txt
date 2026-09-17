@@ -2,5 +2,4 @@ fastapi
 uvicorn[standard]
 psycopg[binary]>=3.1
 cloud-sql-python-connector[psycopg]>=1.12
-sse-starlette
 pydantic

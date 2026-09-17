@@ -79,6 +79,33 @@ def create_job(conn, filename: str, pages: list[dict]) -> str:
         return str(job_id)
 
 
+def get_job_progress(conn, job_id: str) -> dict | None:
+    """Counts only — no rewrite text.
+
+    The client polls this every couple of seconds while a job runs, and a
+    200-page job's full snapshot is close to a megabyte of prose. Sending
+    that repeatedly just to learn "how many are done" wastes the whole
+    payload; the document itself is fetched once, at the end.
+    """
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+        cur.execute("SELECT id, filename, status FROM rewrite_jobs WHERE id = %s", (job_id,))
+        job = cur.fetchone()
+        if job is None:
+            return None
+        cur.execute(
+            """
+            SELECT
+              count(*) AS total,
+              count(*) FILTER (WHERE status = 'completed') AS completed,
+              count(*) FILTER (WHERE status = 'failed')    AS failed
+            FROM rewrite_chunks WHERE job_id = %s
+            """,
+            (job_id,),
+        )
+        counts = cur.fetchone()
+        return {"job": job, **counts}
+
+
 def get_job_snapshot(conn, job_id: str) -> dict | None:
     with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute(

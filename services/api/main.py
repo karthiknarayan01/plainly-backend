@@ -1,23 +1,20 @@
-# Real endpoints: job creation, a plain snapshot GET, and an SSE stream
-# that polls the DB server-side and pushes updates as chunks complete.
-# The worker (services/worker) is the only thing that ever touches
-# OpenRouter — this service only ever talks to Postgres.
+# Real endpoints: job creation, a full snapshot GET, and a cheap progress
+# GET the client polls while a job runs. The worker (services/worker) is
+# the only thing that ever touches OpenRouter — this service only ever
+# talks to Postgres.
 
-import asyncio
 import json
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from sse_starlette.sse import EventSourceResponse
 
 import db
 
 app = FastAPI()
 
 TERMINAL_STATUSES = ("completed", "failed")
-POLL_INTERVAL_SECONDS = 1
 
 
 @app.get("/health")
@@ -65,27 +62,19 @@ def get_rewrite_job(job_id: str):
     return json.loads(_to_json(snapshot))
 
 
-@app.get("/rewrite-jobs/{job_id}/stream")
-async def stream_rewrite_job(job_id: str):
-    async def event_generator():
-        # One connection for the whole stream, not one per poll — a
-        # multi-minute job at a 1s poll interval was opening hundreds of
-        # fresh Cloud SQL connections per client, which exhausted the
-        # 25-connection limit on the current DB tier under real load
-        # (confirmed happening in production, not theoretical).
-        last_payload = None
-        with db.get_conn() as conn:
-            while True:
-                snapshot = db.get_job_snapshot(conn, job_id)
-                if snapshot is None:
-                    yield {"event": "error", "data": json.dumps({"detail": "job not found"})}
-                    return
-                payload = _to_json(snapshot)
-                if payload != last_payload:
-                    yield {"event": "update", "data": payload}
-                    last_payload = payload
-                if snapshot["job"]["status"] in TERMINAL_STATUSES:
-                    return
-                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+@app.get("/rewrite-jobs/{job_id}/progress")
+def get_rewrite_job_progress(job_id: str):
+    """Cheap counts for the client's poll loop.
 
-    return EventSourceResponse(event_generator())
+    Replaced the SSE stream on 2026-09-17. The stream existed to reveal
+    pages as they finished, but the reader only ever showed the completed
+    run from page 1 — so a job processing pages out of order (8 lanes)
+    surfaced a fraction of the document and looked like the rest had been
+    lost. The client now waits for the whole document and shows progress
+    from this endpoint while it waits.
+    """
+    with db.get_conn() as conn:
+        progress = db.get_job_progress(conn, job_id)
+    if progress is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return json.loads(_to_json(progress))
