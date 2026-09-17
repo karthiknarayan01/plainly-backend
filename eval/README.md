@@ -240,6 +240,51 @@ theoretical, not to override the requirement. Re-run `oracle`
 periodically (and especially after any prompt/model change) to see
 whether the gap is closing, widening, or stable.
 
+**Attempted to close this gap further (target: 90% agreement) — did not
+work, reverted.** Four more rubric-tightening rounds followed the 56%
+baseline above, each targeting the specific misses the previous run
+surfaced (explicit named-entity/fabrication enumeration, a carve-out so
+that instruction wouldn't double-count against the structural-content
+rule, an "illustrative analogy using a real company name is still
+fabrication" clarification, an explicit fix for structural content
+scoring 0 instead of 10 on N/A checks, and a dedicated check for
+precise-term-swapped-for-similar-word distortions like "gross margin" →
+"profit"). Agreement across the four attempts: 22%, 44%, 33%, 33% —
+**it never recovered past the original 56%, and kept sliding into new
+regressions** (one single example — 008, the table of contents — broke
+in three different ways across three attempts: fidelity zeroed, then
+understanding/explanation zeroed, then fidelity zeroed again, each time
+from an instruction meant to fix something unrelated). Reverted the
+judge prompt to the 56% version rather than ship any of that; the only
+change kept was raising `MAX_JUDGE_OUTPUT_TOKENS` (3000→6000), a
+harmless crash-safety margin unrelated to rubric content.
+
+The pattern across all four failed attempts: DeepSeek-V3.1 as judge does
+not reliably catch (a) fabricated specifics dressed as an illustrative
+analogy ("imagine companies like Amazon or Google..." replacing a generic
+"major cloud providers"), or (b) a precise technical term swapped for a
+similar-sounding but not-equivalent everyday word ("gross margin" →
+"profit," "Adjusted EBITDA" → "the profit") — even when told about both
+patterns in explicit, example-driven detail. This reads as a genuine
+capability ceiling for a single-call open-source judge on this specific
+kind of subtle distortion, not a wording problem four more attempts would
+fix. It's also worth treating the specific 56%/22%/44%/33% numbers as
+noisy, not precise — with only 9 examples, a single case flipping either
+way moves the reported rate by ~11 points, so a few points of difference
+between runs isn't a meaningful signal on its own; the qualitative
+pattern (which failure modes keep recurring) is the more reliable read
+than the exact percentage.
+
+Realistic paths to actually reach 90%, none attempted yet: (1) a second,
+narrower judge call dedicated only to enumerating and fact-checking
+specific claims/entities/numbers against the source — decomposing "score
+6 dimensions AND fact-check" into two focused calls may succeed where one
+combined call hasn't; (2) self-consistency — call the judge N times and
+take the strictest or majority verdict, trading cost for reliability;
+(3) grow the eval set toward the ~30-50 examples already planned in
+"Split" below, so agreement is measured on enough cases to be a stable
+number rather than one that swings ~11 points per flipped example.
+
 ## Split
 
 Once there are enough real examples (rule of thumb: aim for at least
