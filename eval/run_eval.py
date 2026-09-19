@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eval runner for Grasp's writing/judge models, served via OpenRouter.
+"""Eval runner for Plainly's writing/judge models, served via OpenRouter.
 
 Three modes:
 

@@ -4,7 +4,7 @@
 -- doc §06/§09" were describing a spoken/planned concept, not a file.
 --
 -- Applied directly via `gcloud sql connect plainly-db --user=plainly_app
--- --database=grasp < infra/sql/schema.sql` (or psql through the Cloud
+-- --database=plainly < infra/sql/schema.sql` (or psql through the Cloud
 -- SQL Auth Proxy) — no migration framework yet, this is the only
 -- migration so far.
 

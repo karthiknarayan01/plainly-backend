@@ -1,7 +1,7 @@
-# Grasp Backend
+# Plainly Backend
 
 The document-processing and rewrite service backing the
-[Grasp app](https://github.com/karthiknarayan01/grasp-app).
+[Plainly app](https://github.com/karthiknarayan01/plainly-app).
 
 Given a PDF, this service produces a plain-language, novel-like rewrite
 that stays semantically faithful to the original — same ideas, same
@@ -55,7 +55,7 @@ infrastructure was removed entirely.
 > now **one model and one call per page**, `anthropic/claude-sonnet-5` as
 > writer, with no judge, no fact-check and no retry loop.
 >
-> What that costs, stated grasp: nothing now checks a rewrite before a
+> What that costs, stated plainly: nothing now checks a rewrite before a
 > reader sees it. The judge was the only thing verifying that every figure
 > survived and that nothing was invented, and in the benchmark below this
 > writer did fabricate three company names on one page. `eval/` still
