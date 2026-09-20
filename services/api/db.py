@@ -79,6 +79,14 @@ def create_job(conn, filename: str, pages: list[dict]) -> str:
         return str(job_id)
 
 
+
+# Mirrors services/worker/llm.py's FAILURE_INSUFFICIENT_CREDITS. Not
+# imported — these are two independently-built Docker images that share
+# no code (see this module's docstring) — so the literal is duplicated;
+# keep both in sync if it ever changes.
+_FAILURE_INSUFFICIENT_CREDITS = "insufficient_credits"
+
+
 def get_job_progress(conn, job_id: str) -> dict | None:
     """Counts only — no rewrite text.
 
@@ -86,6 +94,14 @@ def get_job_progress(conn, job_id: str) -> dict | None:
     200-page job's full snapshot is close to a megabyte of prose. Sending
     that repeatedly just to learn "how many are done" wastes the whole
     payload; the document itself is fetched once, at the end.
+
+    Also reports whether ANY chunk has failed specifically because the
+    OpenRouter account is out of credits. One such failure means every
+    other in-flight and future chunk in this job is failing the identical
+    way — an empty balance affects every call, not just one page — so the
+    client uses this to stop waiting and tell the reader why immediately,
+    rather than poll for minutes while a few hundred remaining pages each
+    independently rediscover the same empty balance.
     """
     with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute("SELECT id, filename, status FROM rewrite_jobs WHERE id = %s", (job_id,))
@@ -97,10 +113,11 @@ def get_job_progress(conn, job_id: str) -> dict | None:
             SELECT
               count(*) AS total,
               count(*) FILTER (WHERE status = 'completed') AS completed,
-              count(*) FILTER (WHERE status = 'failed')    AS failed
+              count(*) FILTER (WHERE status = 'failed')    AS failed,
+              bool_or(last_feedback = %s) AS insufficient_credits
             FROM rewrite_chunks WHERE job_id = %s
             """,
-            (job_id,),
+            (_FAILURE_INSUFFICIENT_CREDITS, job_id),
         )
         counts = cur.fetchone()
         return {"job": job, **counts}

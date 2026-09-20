@@ -158,6 +158,20 @@ def process_chunk(client, chunk: dict) -> None:
             db.save_chunk_result(conn, chunk["id"], rewrite, {}, None, 1)
             db.maybe_complete_job(conn, chunk["job_id"])
         print(f"[chunk {chunk['id']}] completed ({len(rewrite)} chars)", flush=True)
+    except llm.InsufficientCreditsError as exc:
+        # Stored as a stable code (llm.FAILURE_INSUFFICIENT_CREDITS), not
+        # the raw exception text: services/api/db.py's get_job_progress
+        # looks for this exact string across a job's chunks so the reader
+        # can stop waiting and show a real explanation — "we're out of
+        # credits" — instead of the generic "something went wrong" a raw
+        # error dump would produce, or worse, silence.
+        print(f"[chunk {chunk['id']}] FAILED: insufficient credits ({exc})", flush=True)
+        try:
+            with db.get_conn() as conn:
+                db.mark_chunk_failed(conn, chunk["id"], llm.FAILURE_INSUFFICIENT_CREDITS)
+                db.maybe_complete_job(conn, chunk["job_id"])
+        except Exception as inner_exc:
+            print(f"[chunk {chunk['id']}] also failed to record failure: {inner_exc}", flush=True)
     except Exception as exc:
         print(f"[chunk {chunk['id']}] FAILED: {exc}", flush=True)
         try:
