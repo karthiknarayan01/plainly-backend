@@ -126,7 +126,11 @@ def mark_chunk_failed(conn, chunk_id: str, error: str) -> None:
         conn.commit()
 
 
-def maybe_complete_job(conn, job_id: str) -> None:
+def maybe_complete_job(conn, job_id: str) -> str | None:
+    """Returns the job's new terminal status if this call just set one
+    (so the caller can log a job_completed/job_failed event exactly
+    once), or None if the job isn't finished yet or was already terminal.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "SELECT status FROM rewrite_chunks WHERE job_id = %s",
@@ -134,18 +138,19 @@ def maybe_complete_job(conn, job_id: str) -> None:
         )
         statuses = [row[0] for row in cur.fetchall()]
         if not statuses:
-            return
+            return None
         if all(s == "completed" for s in statuses):
             new_status = "completed"
         elif any(s == "failed" for s in statuses) and all(s in ("completed", "failed") for s in statuses):
             new_status = "failed"
         else:
-            return  # still chunks pending/processing
+            return None  # still chunks pending/processing
         cur.execute(
-            "UPDATE rewrite_jobs SET status = %s, updated_at = now() WHERE id = %s",
+            "UPDATE rewrite_jobs SET status = %s, updated_at = now() WHERE id = %s AND status NOT IN ('completed', 'failed')",
             (new_status, job_id),
         )
         conn.commit()
+        return new_status if cur.rowcount else None
 
 
 def create_job(conn, filename: str, pages: list[dict]) -> str:

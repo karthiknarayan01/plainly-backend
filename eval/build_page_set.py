@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Regenerates eval/pages/ — the page-scale eval set.
+"""Regenerates eval/tasks/<task>/pages/ — the page-scale eval set, one
+directory per writer task (earnings_statement, technical_book,
+contents_page), mirroring prompts/writer/'s one-file-per-task split.
 
 Real full pages (the earnings releases in eval/sources/, plus real pages
 from four technical/finance books) annotated with the assertions that
@@ -7,14 +9,14 @@ run_page_eval.py checks in code: every figure that must survive, the
 jargon that must be explained, and a watchlist of real company names
 absent from the page that must therefore never appear in a rewrite.
 
-See eval/pages/README.md for the design and its known limitations.
+See eval/tasks/README.md for the design and its known limitations.
 
 The technical-book pages are deliberately NOT committed: they are full
 pages of copyrighted books, and this repo's practice is to keep
 third-party copyrighted text out of it (see the note on the reference
-novel in prompts/writing_model_system_prompt.md). Set the env vars below
-to local copies to regenerate them. Without any of them you get the
-earnings half only — public-disclosure material, which is committed.
+novel in prompts/writer/_shared.md). Set the env vars below to local
+copies to regenerate them. Without any of them you get the earnings
+half only — public-disclosure material, which is committed.
 """
 
 import os
@@ -25,7 +27,15 @@ from pathlib import Path
 import yaml
 
 BE = str(Path(__file__).resolve().parent.parent)
-OUT = f"{BE}/eval/pages"
+# One directory per task (eval/tasks/<source_type>/pages/), not a flat
+# eval/pages/ — mirrors prompts/writer/'s one-file-per-task split, and
+# eval/run_page_eval.py picks the matching writer task prompt straight
+# from the same source_type. Moved here 2026-09-21; see eval/tasks/README.md.
+TASK_DIRS = {
+    "earnings_statement": f"{BE}/eval/tasks/earnings_statement/pages",
+    "technical_book": f"{BE}/eval/tasks/technical_book/pages",
+    "contents_page": f"{BE}/eval/tasks/contents_page/pages",
+}
 
 NUM = re.compile(r"\$?\d[\d,]*\.\d+|\$\d[\d,]*|\d[\d,]*%|\b\d{4}\b|\b\d{2,3}\b")
 
@@ -193,7 +203,7 @@ for book in BOOKS:
 
 if not any_book:
     print("No PLAINLY_*_PDF env vars set — generating the earnings half only "
-          "(book pages are not committed; see eval/pages/README.md)")
+          "(book pages are not committed; see eval/tasks/README.md)")
 
 for n, ex in enumerate(examples, 1):
     if ex["company"]:
@@ -212,12 +222,14 @@ for n, ex in enumerate(examples, 1):
     ex["jargon_that_must_be_explained"] = jargon_on_page(p)
     ex["entities_that_must_not_appear"] = forbidden(p)
 
-os.makedirs(OUT, exist_ok=True)
-for f in os.listdir(OUT):
-    if f.endswith(".yaml"):
-        os.remove(os.path.join(OUT, f))
+for d in TASK_DIRS.values():
+    os.makedirs(d, exist_ok=True)
+    for f in os.listdir(d):
+        if f.endswith(".yaml"):
+            os.remove(os.path.join(d, f))
 for ex in examples:
-    yaml.safe_dump(ex, open(f"{OUT}/{ex['id']}.yaml", "w"), sort_keys=False, allow_unicode=True, width=78)
+    out_dir = TASK_DIRS[ex["source_type"]]
+    yaml.safe_dump(ex, open(f"{out_dir}/{ex['id']}.yaml", "w"), sort_keys=False, allow_unicode=True, width=78)
 
 print(f"{len(examples)} page-scale examples")
 for ex in examples:

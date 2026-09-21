@@ -2,7 +2,11 @@
 
 One model, one call per page. There is no judge, no fact-check, and no
 retry loop — removed 2026-09-17 by explicit request ("there is no need
-for the feedback models so remove it. Use just the writer models").
+for the feedback models so remove it. Use just the writer models"). The
+one call now selects a task-specific prompt (composed from
+prompts/writer/_shared.md + prompts/writer/<task>.md, see
+compose_writer_prompt() below) rather than a single generic prompt — the
+model call count and shape are otherwise unchanged from 2026-09-17.
 
 What that trades away, recorded honestly so it can be put back
 deliberately rather than rediscovered: the judge was the only thing
@@ -29,6 +33,8 @@ from collections import deque
 from pathlib import Path
 
 from openai import OpenAI
+
+from logging_json import log
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
@@ -87,6 +93,26 @@ def load_prompt(path: Path) -> str:
     if idx != -1:
         return text[idx + len(marker):].strip()
     return text.strip()
+
+
+WRITER_PROMPTS_DIR = PROMPTS_DIR / "writer"
+
+# One prompt per kind of page the writer sees, composed with the shared
+# rules rather than forked into fully independent files — see
+# prompts/writer/_shared.md's header for why. classify_page_type() in
+# services/worker/main.py picks the task; "contents_page" is never chosen
+# there (looks_like_contents() skips the LLM call entirely before
+# classification runs) but is used directly by eval/run_page_eval.py to
+# test the model's own judgment against a known contents page.
+WRITER_TASKS = ("earnings_statement", "technical_book", "contents_page")
+
+
+def compose_writer_prompt(task: str) -> str:
+    if task not in WRITER_TASKS:
+        raise ValueError(f"unknown writer task: {task!r} (expected one of {WRITER_TASKS})")
+    shared = load_prompt(WRITER_PROMPTS_DIR / "_shared.md")
+    specific = load_prompt(WRITER_PROMPTS_DIR / f"{task}.md")
+    return f"{shared}\n\n{specific}"
 
 
 def make_client() -> OpenAI:
@@ -175,34 +201,72 @@ def build_writer_user_message(original_text: str) -> str:
 
 
 def _create(client: OpenAI, messages: list[dict]):
+    # stream=True + stream_options.include_usage lets the caller measure
+    # time-to-first-token separately from total completion time, without
+    # changing what's ultimately produced — the caller still consumes the
+    # whole stream before doing anything with it, so output and total
+    # latency are unchanged from the non-streaming call this replaced.
+    # include_usage is required or every chunk.usage is None (openai-python
+    # >=1.26, already satisfied by this service's pinned openai>=1.30).
+    kwargs = dict(
+        model=WRITER_MODEL, messages=messages, temperature=0.3,
+        max_tokens=MAX_WRITER_OUTPUT_TOKENS,
+        stream=True, stream_options={"include_usage": True},
+    )
     try:
         # Some models default to a visible "thinking" pass even for a plain
         # rewrite — confirmed by testing, that burns ~20x the output tokens
         # for no benefit here.
         return client.chat.completions.create(
-            model=WRITER_MODEL, messages=messages, temperature=0.3,
-            max_tokens=MAX_WRITER_OUTPUT_TOKENS,
-            extra_body={"reasoning": {"enabled": False}},
+            **kwargs, extra_body={"reasoning": {"enabled": False}},
         )
     except Exception as exc:
         # Some models reject this param outright rather than ignoring it
         # ("Reasoning is mandatory for this endpoint"). Retry without it.
         if "reasoning" not in str(exc).lower():
             raise
-        return client.chat.completions.create(
-            model=WRITER_MODEL, messages=messages, temperature=0.3,
-            max_tokens=MAX_WRITER_OUTPUT_TOKENS,
-        )
+        return client.chat.completions.create(**kwargs)
 
 
-def call_writer(client: OpenAI, original_text: str) -> str:
+def _consume_stream(stream) -> tuple[str, float | None, float, str | None, object]:
+    """Reads a chat-completion stream to the end, returning
+    (text, ttft_ms, total_ms, finish_reason, usage).
+
+    OpenRouter's final usage-bearing chunk is not shaped like vanilla
+    OpenAI's (whose usage chunk has an empty `choices` list) — it carries
+    usage *alongside* a choice repeating finish_reason. So `chunk.usage`
+    is checked unconditionally on every chunk, and the loop never stops
+    early on the first finish_reason, or the usage chunk can be missed.
+    """
+    start = time.monotonic()
+    parts: list[str] = []
+    ttft_ms: float | None = None
+    finish_reason = None
+    usage = None
+    for chunk in stream:
+        if chunk.choices:
+            choice = chunk.choices[0]
+            delta_content = getattr(choice.delta, "content", None) if choice.delta else None
+            if delta_content:
+                if ttft_ms is None:
+                    ttft_ms = round((time.monotonic() - start) * 1000, 1)
+                parts.append(delta_content)
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+        if chunk.usage:
+            usage = chunk.usage
+    total_ms = round((time.monotonic() - start) * 1000, 1)
+    return "".join(parts).strip(), ttft_ms, total_ms, finish_reason, usage
+
+
+def call_writer(client: OpenAI, original_text: str, task: str) -> str:
     if _credits_likely_exhausted():
         raise InsufficientCreditsError(
             "OpenRouter reported insufficient credits on a recent call; "
             "skipping this attempt rather than repeating the same failure."
         )
 
-    system_prompt = load_prompt(PROMPTS_DIR / "writing_model_system_prompt.md")
+    system_prompt = compose_writer_prompt(task)
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": build_writer_user_message(original_text)},
@@ -210,8 +274,16 @@ def call_writer(client: OpenAI, original_text: str) -> str:
     for attempt in range(RATE_LIMIT_RETRIES + 1):
         _throttle()
         try:
-            resp = _create(client, messages)
-            return (resp.choices[0].message.content or "").strip()
+            stream = _create(client, messages)
+            rewrite, ttft_ms, total_ms, finish_reason, usage = _consume_stream(stream)
+            log(
+                "llm_call_end", model=WRITER_MODEL, task=task,
+                ttft_ms=ttft_ms, total_ms=total_ms, finish_reason=finish_reason,
+                input_tokens=getattr(usage, "prompt_tokens", None),
+                output_tokens=getattr(usage, "completion_tokens", None),
+                rewrite_chars=len(rewrite),
+            )
+            return rewrite
         except Exception as exc:
             # The SDK sets status_code from the real HTTP response for
             # every APIStatusError, 402 included even though it has no

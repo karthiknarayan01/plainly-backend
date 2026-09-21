@@ -9,6 +9,8 @@ resource "google_project_service" "apis" {
     "cloudresourcemanager.googleapis.com",
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com", # OPENROUTER_API_KEY for the worker — see secrets.tf
+    "logging.googleapis.com",       # log-based latency metrics — see metrics.tf
+    "monitoring.googleapis.com",    # dashboard + percentile queries over those metrics — see metrics.tf
   ])
   service            = each.value
   disable_on_destroy = false

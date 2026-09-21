@@ -37,7 +37,7 @@ where the same names are deliberately absent and must stay absent.
 ## Technical-book sources
 
 Four books, each contributing a few real full pages plus one real
-table-of-contents page (see `eval/pages/README.md` for why contents pages
+table-of-contents page (see `eval/tasks/README.md` for why contents pages
 are scored separately from ordinary prose). Chosen for genre spread, not
 just volume — financial narrative, distributed-systems prose, ML/inference
 technical writing, and finance *education* (concepts explained, closer in
@@ -48,14 +48,14 @@ them can look solid and still be narrow.
 | Book | Genre | Why it's here |
 |---|---|---|
 | *The Art of Scalability* (Abbott & Fisher) | Distributed systems / org design | The original book source; kept for continuity with earlier results |
-| *AI Engineering* (Chip Huyen, O'Reilly) | ML systems | Different vocabulary (fine-tuning, context window) than the systems book; also the source of the user-commissioned reference rewrite used in `prompts/writing_model_system_prompt.md`'s worked example |
+| *AI Engineering* (Chip Huyen, O'Reilly) | ML systems | Different vocabulary (fine-tuning, context window) than the systems book; also the source of the user-commissioned reference rewrite used in `prompts/writer/_shared.md`'s worked example |
 | *Inference Engineering* | ML/inference internals | Denser technical vocabulary (quantization, KV cache, batching) and real `Figure N.N` captions, for the figure-reproduction path |
 | *Financial Statements: A Step-by-Step Guide* | Finance education | The one book whose whole purpose is teaching financial concepts to a beginner — the closest genre match to what a rewrite is supposed to do, and a real stress test: can a rewrite explain accounting concepts as well as a book written to do exactly that? |
 
 All are copyrighted commercial books, handled the same way as the
 original *AI Engineering* source: full pages are used locally for
-evaluation but never committed (`eval/pages/*.yaml` for book-derived
-pages is gitignored), and only short excerpts (a few paragraphs) would
-ever be quoted into a committed file for comparison purposes. Regenerate
-locally by pointing the four `PLAINLY_*_PDF` env vars in
-`eval/build_page_set.py` at local copies.
+evaluation but never committed (`eval/tasks/technical_book/pages/*.yaml`
+and `eval/tasks/contents_page/pages/*.yaml` are gitignored), and only
+short excerpts (a few paragraphs) would ever be quoted into a committed
+file for comparison purposes. Regenerate locally by pointing the four
+`PLAINLY_*_PDF` env vars in `eval/build_page_set.py` at local copies.

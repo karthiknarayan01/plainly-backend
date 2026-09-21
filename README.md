@@ -173,7 +173,7 @@ of contents lists chapters with no page numbers at all — never matched
 it once. Fixed with a second, independent detection signal, confirmed
 against every non-contents page in the set to produce zero false
 positives before shipping. All three are documented, with the
-before/after numbers, in `eval/pages/README.md` and `eval/README.md`.
+before/after numbers, in `eval/tasks/README.md` and `eval/README.md`.
 
 ### Running it
 
@@ -186,18 +186,46 @@ python eval/run_page_eval.py --models deepseek/deepseek-v4.1-flash,qwen/qwen3-23
 ```
 
 Full methodology, every candidate tried, and what was ruled out and why:
-`eval/README.md` and `eval/pages/README.md`.
+`eval/README.md` and `eval/tasks/README.md`.
 
 ## Repo structure
 
 ```
 services/api/     FastAPI — job creation, progress, and the finished-document endpoint
 services/worker/  Claims queued pages and makes the rewrite call for each
-prompts/          The writer model's system prompt
-eval/             The evaluation framework described above — pages, harness, results
-infra/terraform/  Cloud SQL, Cloud Run, IAM and secrets, as code
+prompts/writer/   One prompt file per page task, composed with a shared base — see below
+eval/tasks/       The evaluation framework described above — one folder per task, pages + factors
+infra/terraform/  Cloud SQL, Cloud Run, IAM/secrets, and latency metrics, as code
 infra/sql/        Postgres schema
 ```
+
+### One prompt per task, not one prompt for everything
+
+The writer prompt is split by what kind of page it's rewriting —
+`prompts/writer/earnings_statement.md`, `technical_book.md`,
+`contents_page.md` — each composed at call time with
+`prompts/writer/_shared.md`, which carries every rule that applies
+regardless of task (fidelity, the highlight budget, output format).
+Production picks the task with a cheap, in-code heuristic
+(`services/worker/main.py`'s `classify_page_type()`), not a second model
+call, so the page count stays at exactly one OpenRouter round-trip —
+the same constraint that removed the judge/retry loop in the first
+place. `eval/tasks/` mirrors the same three-way split: one directory per
+task, each with its own real pages and its own factor files (what gets
+measured for that task, and how — code-computed where possible, a
+narrow judge question only where it has to be).
+
+### Tracing one request through the pipeline
+
+Every job gets one ID (`job_id`, generated when the API creates it) that
+threads through every log line the pipeline produces for that job — page
+classification, the writer call, the save to Postgres — as structured
+JSON on stdout, which Cloud Run ingests as Cloud Logging entries
+automatically. Filtering logs on that one ID reconstructs a job's full
+processing sequence end to end. The writer call also reports
+time-to-first-token separately from total completion time; both feed
+Cloud Monitoring log-based metrics (`infra/terraform/metrics.tf`) for
+p95/p99 latency, without a second instrumentation system.
 
 `dev` is the default/live branch; `main` only advances via a dev → main
 promotion PR.
