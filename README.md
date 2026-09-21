@@ -188,6 +188,32 @@ python eval/run_page_eval.py --models deepseek/deepseek-v4.1-flash,qwen/qwen3-23
 Full methodology, every candidate tried, and what was ruled out and why:
 `eval/README.md` and `eval/tasks/README.md`.
 
+## Latency
+
+What matters for a reader waiting on a page is time-to-first-token, not
+total completion time — and TTFT isn't one number, it's the sum of
+whatever a page actually has to go through before its first visible
+output: queueing for a free worker, the in-code page-type classifier,
+the rate limiter, and the model call itself. Each is measured
+separately and logged (`services/worker/logging_json.py`), feeding
+per-component Cloud Monitoring metrics (`infra/terraform/metrics.tf`) —
+so a slow page can be traced to a specific cause instead of one opaque
+number.
+
+![Time to first token, by component](eval/observability/ttft_breakdown.png)
+
+First production validation run, right after this instrumentation
+shipped: the model call itself is consistently **sub-20ms** to first
+token — never the bottleneck. What the chart actually caught is a real
+cold-start effect — a fresh worker instance spinning up after a deploy
+adds several seconds of queueing before a page is even claimed; the
+same pipeline against an already-warm worker dropped to ~1.3s. That's
+directly actionable: for this pipeline, latency work should target
+worker warm-up and instance scheduling, not the model or the prompt —
+exactly the kind of attribution a single blended latency number can't
+give you. Full component breakdown and how to reproduce it:
+`eval/observability/README.md`.
+
 ## Repo structure
 
 ```
@@ -222,17 +248,9 @@ threads through every log line the pipeline produces for that job — page
 classification, the writer call, the save to Postgres — as structured
 JSON on stdout, which Cloud Run ingests as Cloud Logging entries
 automatically. Filtering logs on that one ID reconstructs a job's full
-processing sequence end to end.
-
-Latency here means time-to-first-token, not total completion time — and
-TTFT for a page is measured as the sum of its actual components, not
-one opaque number: how long a page queued before a worker claimed it,
-how long the in-code page-type classifier took, how long the rate
-limiter made the call wait, and how long the model itself took to
-produce a first token. Each is its own Cloud Monitoring metric
-(`infra/terraform/metrics.tf`), so a slow page can be attributed to a
-specific cause — useful for optimization later, not just a dashboard
-number. See `eval/observability/README.md` for the full breakdown.
+processing sequence end to end — every action taken and in what order,
+not just the final result. The same log lines feed the latency
+breakdown above; see "## Latency".
 
 `dev` is the default/live branch; `main` only advances via a dev → main
 promotion PR.
