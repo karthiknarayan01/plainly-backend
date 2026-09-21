@@ -22,7 +22,11 @@ tfplan
 # Eval run output — reproducible from eval/run_eval.py, not source
 eval/results/
 
-# Page-scale eval examples derived from a copyrighted technical book — the
+# Page-scale eval examples derived from copyrighted technical books — the
 # earnings-statement pages ARE committed (public disclosures), these are not.
-# Regenerate locally: PLAINLY_BOOK_PDF=/path/to/book.pdf python eval/build_page_set.py
+# Regenerate locally: point the PLAINLY_*_PDF env vars in
+# eval/build_page_set.py at local copies, then run it.
 eval/pages/*-scalability-*.yaml
+eval/pages/*-ai-engineering-*.yaml
+eval/pages/*-inference-engineering-*.yaml
+eval/pages/*-financial-statements-*.yaml

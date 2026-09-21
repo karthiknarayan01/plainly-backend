@@ -33,6 +33,21 @@ code, from the text, with no model involved:
                   the reader.
   truncated       finish_reason == "length": the page was cut off mid
                   sentence because it hit the output cap.
+  stray_markdown  "## Heading", an unclosed "**", or a "- " bullet line —
+                  formatting the reader's plain-prose renderer displays
+                  as literal punctuation. Checked with the same patterns
+                  services/worker/main.py and the frontend actually use,
+                  not a separate approximation of them.
+  highlights      count of well-formed **bold** spans. The prompt asks
+                  for roughly 2-4 per page; 0 or >6 is flagged as an
+                  anti-pattern (nothing emphasised, or everything is).
+  contents page   a source page whose source_type is "contents_page" is
+  handling        scored on a different, binary axis: did the writer
+                  correctly produce nothing (or a short decline), per its
+                  own prompt instruction — not fidelity/expansion, which
+                  don't mean anything for a page that should be empty.
+                  These pages are excluded from every other aggregate so
+                  they can't distort it either direction.
 
 Only `teaching` and `jargon_explained` need a model, and both are asked as
 narrow questions ("which of these specific terms did it explain?") rather
@@ -78,6 +93,35 @@ LEAK_RE = re.compile(
     r"looking at (?:this|the) (?:passage|page)\b|before (?:i|we) (?:write|begin)\b)",
     re.IGNORECASE,
 )
+
+# Mirrors services/worker/main.py's _DECLINED exactly — a short reply that
+# announces having nothing to say, rather than actually saying nothing.
+# The two services already don't share code (see their db.py docstrings);
+# this is the same duplication, same reasoning.
+DECLINED_RE = re.compile(
+    r"no (output|content|text)\b"
+    r"|nothing to (rewrite|translate|simplify)"
+    r"|this page (is|appears to be) (a |an )?(table of contents|index|blank)",
+    re.IGNORECASE,
+)
+MAX_DECLINE_LENGTH = 400
+
+# Formatting the reader's renderer cannot display, mirroring the actual
+# strip/render logic in plainly-web (stripMarkdown, splitBold) — checked
+# here, on the same output the real pipeline would receive, rather than
+# assumed safe because the prompt asks for plain prose.
+HEADING_RE = re.compile(r"^#{1,6}\s+\S", re.MULTILINE)
+BULLET_RE = re.compile(r"^\s*[-*]\s+\S", re.MULTILINE)
+BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+# Was 6, loosely matching the prompt's old "roughly two to four" guidance.
+# The 2026-09-20 full 25-page run found the real distribution running far
+# past even that: 15/21 pages over 6, up to 27 on one numerically-dense
+# page — the prompt's "roughly" was being read as a suggestion, not a
+# limit. The prompt now states a hard budget of 4; kept one highlight of
+# slack here rather than matching it exactly, so a page at 5 (a minor,
+# plausible overshoot) isn't flagged identically to one at 27.
+MIN_HEALTHY_HIGHLIGHTS = 1
+MAX_HEALTHY_HIGHLIGHTS = 5
 
 
 def load_pages(limit: int | None) -> list[dict]:
@@ -153,6 +197,29 @@ def score_fabrication(page: dict, rewrite: str) -> list[str]:
     return found
 
 
+def score_formatting(rewrite: str) -> dict:
+    """Formatting defects the reader's plain-prose renderer can't hide.
+
+    All code-computed, no model involved — same rationale as fidelity and
+    fabrication: "looks fine" isn't evidence the actual rendered page is
+    fine.
+    """
+    unclosed_bold = len(re.findall(r"\*\*", rewrite)) % 2 == 1
+    highlights = len(BOLD_RE.findall(rewrite))
+    return {
+        "has_heading": bool(HEADING_RE.search(rewrite)),
+        "has_bullets": bool(BULLET_RE.search(rewrite)),
+        "unclosed_bold": unclosed_bold,
+        "highlight_count": highlights,
+        "highlight_out_of_range": not (MIN_HEALTHY_HIGHLIGHTS <= highlights <= MAX_HEALTHY_HIGHLIGHTS),
+    }
+
+
+def is_declined(rewrite: str) -> bool:
+    text = rewrite.strip()
+    return len(text) <= MAX_DECLINE_LENGTH and bool(DECLINED_RE.search(text))
+
+
 def judge_teaching(client: OpenAI, judge_model: str, page: dict, rewrite: str) -> dict:
     """Narrow questions only: which listed terms got explained, and a teaching score."""
     terms = page.get("jargon_that_must_be_explained") or []
@@ -212,6 +279,26 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
             print(f"  [{page['id']}] FAILED: {type(exc).__name__}: {str(exc)[:110]}", flush=True)
             per_page.append({"id": page["id"], "error": f"{type(exc).__name__}: {str(exc)[:300]}"})
             continue
+
+        # A contents/index page is scored on a completely different axis:
+        # correct behaviour IS an empty (or declined) reply, per the
+        # writer's own prompt instruction. Branching here, before the
+        # generic "empty = failure" check below, so getting this right
+        # is never mistaken for the model being broken — and routing it
+        # to its own tally so it can't silently drag down or inflate
+        # fidelity/expansion, neither of which mean anything for a page
+        # that's supposed to produce nothing.
+        if page["source_type"] == "contents_page":
+            correct = not rewrite.strip() or is_declined(rewrite)
+            per_page.append({
+                "id": page["id"], "source_type": page["source_type"],
+                "contents_correct": correct,
+                "rewrite_chars": len(rewrite), "rewrite": rewrite,
+            })
+            print(f"  [{page['id']:<22}] CONTENTS PAGE: "
+                  f"{'correctly left empty' if correct else 'WRONGLY REWRITTEN'}", flush=True)
+            continue
+
         if not rewrite.strip():
             failures += 1
             print(f"  [{page['id']}] EMPTY RESPONSE", flush=True)
@@ -222,6 +309,7 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
         fabs = score_fabrication(page, rewrite)
         expansion = len(rewrite) / max(len(page["original_page"]), 1)
         leak = bool(LEAK_RE.match(rewrite))
+        fmt = score_formatting(rewrite)
         jt = judge_teaching(client, judge_model, page, rewrite)
         terms = page.get("jargon_that_must_be_explained") or []
         explained = [t for t in (jt.get("explained") or []) if t in terms]
@@ -232,17 +320,25 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
             "numbers_hit": hits, "numbers_total": total, "numbers_missing": missing[:12],
             "fabrications": fabs, "expansion": round(expansion, 2),
             "preamble_leak": leak, "truncated": finish == "length",
+            **fmt,
             "jargon_explained": len(explained), "jargon_total": len(terms),
             "teaching": jt.get("teaching", 0), "note": jt.get("note", ""),
             "rewrite_chars": len(rewrite), "rewrite": rewrite,
         }
         per_page.append(row)
         rc = "n/a" if row["number_recall"] is None else f"{row['number_recall']*100:.0f}%"
+        fmt_flags = "".join([
+            "H" if fmt["has_heading"] else "",
+            "B" if fmt["has_bullets"] else "",
+            "*" if fmt["unclosed_bold"] else "",
+        ])
         print(f"  [{page['id']:<22}] nums={rc:<5} fab={len(fabs)} exp={row['expansion']:.2f} "
-              f"jargon={len(explained)}/{len(terms)} teach={row['teaching']} "
-              f"{'LEAK ' if leak else ''}{'TRUNC' if row['truncated'] else ''}", flush=True)
+              f"hl={fmt['highlight_count']} jargon={len(explained)}/{len(terms)} teach={row['teaching']} "
+              f"{'LEAK ' if leak else ''}{'TRUNC ' if row['truncated'] else ''}"
+              f"{('FMT:' + fmt_flags) if fmt_flags else ''}", flush=True)
 
-    ok = [r for r in per_page if "error" not in r]
+    ok = [r for r in per_page if "error" not in r and "contents_correct" not in r]
+    contents_rows = [r for r in per_page if "contents_correct" in r]
     recalls = [r["number_recall"] for r in ok if r["number_recall"] is not None]
     # Micro-average is the headline: total figures preserved / total figures on
     # offer. The per-page mean (macro) is reported too but is misleading here —
@@ -262,11 +358,15 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
         "pages_that_shrank": sum(1 for r in ok if r["expansion"] < 1.0),
         "preamble_leaks": sum(1 for r in ok if r["preamble_leak"]),
         "truncations": sum(1 for r in ok if r["truncated"]),
+        "stray_markdown": sum(1 for r in ok if r["has_heading"] or r["has_bullets"] or r["unclosed_bold"]),
+        "highlight_out_of_range": sum(1 for r in ok if r["highlight_out_of_range"]),
         "jargon_explained_rate": (
             round(sum(r["jargon_explained"] for r in ok) / max(sum(r["jargon_total"] for r in ok), 1), 4)
             if ok else None
         ),
         "teaching_mean": round(sum(r["teaching"] for r in ok) / len(ok), 2) if ok else None,
+        "contents_pages_correct": sum(1 for r in contents_rows if r["contents_correct"]),
+        "contents_pages_total": len(contents_rows),
     }
     return {"summary": summary, "pages": per_page}
 
@@ -309,7 +409,9 @@ def main() -> None:
         print(f"  -> recall={rc} fabrications={s['fabrications_total']} "
               f"expansion={s['expansion_mean']} shrank={s['pages_that_shrank']} "
               f"leaks={s['preamble_leaks']} trunc={s['truncations']} "
+              f"stray_markdown={s['stray_markdown']} highlight_oor={s['highlight_out_of_range']} "
               f"jargon={s['jargon_explained_rate']} teach={s['teaching_mean']} "
+              f"contents={s['contents_pages_correct']}/{s['contents_pages_total']} "
               f"failed={s['pages_failed']}\n", flush=True)
 
     # Rank: fidelity first (the product's promise), then no fabrication, then teaching.
@@ -317,15 +419,18 @@ def main() -> None:
         s = r["summary"]
         return (-(s["number_recall"] or 0), s["fabrications_total"], -(s["teaching_mean"] or 0))
 
-    print("=" * 96)
-    print(f"{'model':<42}{'recall':>8}{'fab':>5}{'exp':>6}{'shrank':>8}{'jargon':>8}{'teach':>7}{'fail':>6}")
-    print("-" * 96)
+    print("=" * 116)
+    print(f"{'model':<38}{'recall':>8}{'fab':>5}{'exp':>6}{'shrank':>8}{'fmt':>5}{'jargon':>8}"
+          f"{'teach':>7}{'toc':>7}{'fail':>6}")
+    print("-" * 116)
     for r in sorted(results, key=key):
         s = r["summary"]
         rc = "n/a" if s["number_recall"] is None else f"{s['number_recall']*100:.1f}%"
         jr = "n/a" if s["jargon_explained_rate"] is None else f"{s['jargon_explained_rate']*100:.0f}%"
-        print(f"{s['model']:<42}{rc:>8}{s['fabrications_total']:>5}{s['expansion_mean'] or 0:>6.2f}"
-              f"{s['pages_that_shrank']:>8}{jr:>8}{s['teaching_mean'] or 0:>7.2f}{s['pages_failed']:>6}")
+        toc = f"{s['contents_pages_correct']}/{s['contents_pages_total']}" if s["contents_pages_total"] else "-"
+        print(f"{s['model']:<38}{rc:>8}{s['fabrications_total']:>5}{s['expansion_mean'] or 0:>6.2f}"
+              f"{s['pages_that_shrank']:>8}{s['stray_markdown']:>5}{jr:>8}{s['teaching_mean'] or 0:>7.2f}"
+              f"{toc:>7}{s['pages_failed']:>6}")
 
     print(f"\nreport: {out}")
 

@@ -47,6 +47,45 @@
 > prompt swung 74/72/55% across three runs while this one held
 > 74/76/76%. A single-run A/B showed "no change" (74% vs 74%) and was
 > simply wrong — the effect is only visible with replicates.
+>
+> 2026-09-20: fixed a real self-contradiction in "Structural and
+> reference content", found by expanding the eval set to 4 books (each
+> contributing one real table-of-contents page — see eval/pages/README.md).
+> The "reply with nothing at all" instruction for a table of contents
+> sat 15 lines above a *different* rule (for structural content worth
+> keeping, e.g. a glossary) whose own worked example was
+> `Title .......... 123` -> `Title — page 123` — literally a table-of-
+> contents transformation, describing it as "a legitimate readability
+> improvement." deepseek-v4.1-flash, tested directly against a real TOC
+> page, followed the second rule and reformatted the contents instead of
+> staying silent — not a model failure, a prompt bug the model correctly
+> read. Reworded the second rule to explicitly exclude anything with
+> page numbers pointing elsewhere in the document, which is what the
+> first rule already owns completely. First fix alone wasn't enough,
+> either: the contradiction gone, the model just started echoing the TOC
+> back near-verbatim instead. Root cause was "The one rule that matters
+> most" ("when in doubt, keep it") stated earlier and more forcefully
+> than the TOC exception — added an explicit carve-out there stating
+> that recognizing a table of contents is a classification, not a "when
+> in doubt" judgment call, and only then did compliance on deepseek-v4.1-
+> flash go from 0/4 real TOC pages (one from each book) to a consistent
+> majority (run-to-run variance, already documented above, means "always"
+> isn't a claim a handful of runs can support).
+>
+> Same day, larger test: the full, expanded 25-page set run against
+> claude-sonnet-5 (not deepseek) surfaced two things a smaller sample had
+> missed. First, a leaked preamble ("Here's the rewrite:\n\n...") on 2 of
+> 21 pages, despite the explicit hard rule above that names that exact
+> phrase — the earlier fix was validated on 6 pages and showed zero
+> leaks, which this run shows was the sample being too small to catch a
+> real ~10% residual rate, not the rule actually reaching 100%. Left
+> as-is rather than patched further without evidence a change helps;
+> documented honestly instead of re-claiming "fixed." Second, real
+> over-highlighting: up to 27 **bold** spans on one page, 15 of 21 pages
+> over even a loose 6-highlight ceiling — "roughly two to four" was being
+> read as a suggestion, not a limit, especially on numerically-dense
+> pages where every figure felt worth marking. See "Highlighting what
+> matters" below for the hard-budget fix.
 
 ---
 
@@ -133,6 +172,17 @@ left out.
 If you are unsure whether a detail matters, keep it. When in doubt,
 include it.
 
+**This rule has exactly one exception, and it is not a "when in doubt"
+judgment call: a table of contents, an index, or a list of figures.**
+See "Structural and reference content" below for the full instruction,
+but the short version is the part that matters here — reply with
+nothing at all for one of these. That is not you dropping content this
+rule tells you to keep; the entries on that page were never content to
+begin with, they're navigation pointing at page numbers from a different
+document than the one you're producing. Recognizing "this page is a
+table of contents" is a classification, not a judgment call, and it does
+not trigger "keep it, when in doubt" any more than a blank page would.
+
 If the passage you're given is empty, garbled, or contains no real
 content to rewrite, say exactly that — do not invent a plausible-sounding
 passage to fill the gap. A rewrite of nothing is nothing; it is never a
@@ -150,10 +200,23 @@ catch the eye. Mark them with **double asterisks**, which render as bold:
   covering what it cost to make the product."
 - A conclusion the whole passage builds to, where there is one.
 
-Use it sparingly. Roughly **two to four** highlights on a typical page;
-a page where everything is bold has emphasised nothing. Never bold a
-whole sentence or paragraph — highlight the figure or the term itself,
-not the clause around it.
+**You have a budget of four highlights for the whole page. Not four per
+paragraph — four, total, for everything you write.** A page where
+everything is bold has emphasised nothing, which defeats the entire
+purpose of this section just as completely as using zero. When you reach
+four, stop — every number and term after that stays in plain text, even
+if it feels just as important as the ones you already marked. If the
+page is dense with figures (a worked numeric example, a table-heavy
+financial page), that makes the discipline harder, not optional: pick
+the four that matter most to *this specific page's point*, not every
+number that happens to appear on it.
+
+Never bold a whole sentence or paragraph — highlight the figure or the
+term itself, not the clause around it. Never bold a title, a label, or
+the first few words of the passage as a way of setting them off from the
+rest — that is a heading wearing bold as a disguise, and the reader's
+renderer will show it exactly like one: as a doubled-up, out-of-place
+line before your actual first sentence.
 
 Use no other formatting. No headings, no bullet lists, no italics, no
 tables — the reader renders plain prose, and anything else arrives as
@@ -173,26 +236,27 @@ into the middle of the prose. An empty reply is the correct output.
 (The worker also detects most of these and skips them before they ever
 reach you; this is the backstop for the ones it misses.)
 
-For other structural content that IS worth keeping — a glossary, a
-labelled list that the surrounding prose refers to — handle it
-differently from the style rules below:
+For other structural content that IS worth keeping — a glossary, or a
+labelled list the surrounding prose actually refers back to — handle it
+differently from the style rules below. **This is a different category
+from a table of contents or index, which the rule above already covers
+completely: if what you're looking at has page numbers pointing
+elsewhere in the document, it's covered by that rule, not this one, no
+matter how it's formatted.**
 
-- Keep every entry's number, label, and page number exactly as written.
-  Do not paraphrase a title, do not "explain" what a section is about, do
-  not drop or invent an expansion for an abbreviation or product name
-  (e.g. leave "NIMs" as "NIMs" — you don't know for certain what it
-  expands to, and guessing presents a guess as fact).
+- Keep every entry's number and label exactly as written. Do not
+  paraphrase a title, do not "explain" what a section is about, do not
+  drop or invent an expansion for an abbreviation or product name (e.g.
+  leave "NIMs" as "NIMs" — you don't know for certain what it expands to,
+  and guessing presents a guess as fact).
   Rewriting "6.2.1 Embedding Model Architecture" as "6.2.1 How Embedding
   Models Work" is not a simplification — the title is not yours to
   reword, and a reader trying to find that section again now can't match
   it.
-- Never drop the page number tied to an entry. A table of contents that
-  loses its page numbers can't do its job.
-- The only thing you may change is presentation — turning dotted-leader
-  table formatting (`Title .......... 123`) into a clean list like
-  `Title — page 123`, for example. That's a legitimate readability
-  improvement. Reordering entries, merging them, or turning them into
-  full sentences is not.
+- Reordering entries or merging them is not a presentation change; leave
+  the structure alone. A glossary term followed by its one-sentence
+  definition is fine to present as a clean `Term — definition` line, for
+  example, since that's the format the source already uses.
 
 ## Style
 

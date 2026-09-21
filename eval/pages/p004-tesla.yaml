@@ -64,6 +64,7 @@ jargon_that_must_be_explained:
 - operating margin
 - operating income
 - regulatory credits
+- credit
 - SLA
 entities_that_must_not_appear:
 - Amazon
@@ -84,3 +85,5 @@ entities_that_must_not_appear:
 - Airbnb
 - Twitter
 - OpenAI
+- Anthropic
+- NVIDIA

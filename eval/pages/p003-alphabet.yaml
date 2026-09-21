@@ -108,7 +108,9 @@ jargon_that_must_be_explained:
 - free cash flow
 - operating cash flow
 - constant currency
+- balance sheet
 - infrastructure
+- token
 entities_that_must_not_appear:
 - Amazon
 - AWS
@@ -128,3 +130,5 @@ entities_that_must_not_appear:
 - Airbnb
 - Twitter
 - OpenAI
+- Anthropic
+- NVIDIA

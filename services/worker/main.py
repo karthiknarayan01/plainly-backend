@@ -94,6 +94,21 @@ _TOC_LEADER = re.compile(
 )
 MIN_TOC_ENTRIES = 5
 
+# Found via the expanded eval set (eval/pages/), not assumed: an e-book-style
+# contents page can list chapters with NO page numbers at all — nothing for
+# _TOC_LEADER to match, since it has no leader-dot-then-number to find. Real
+# example that slipped through without this: a "Table of Contents" heading
+# followed by "Chapter 1. - Twelve Basic Principles / Chapter 2. - The
+# Balance Sheet / Chapter 3. - The Income Statement...", never once matching
+# _TOC_LEADER. Three or more distinct "Chapter N" / "Section X" markers next
+# to the heading is a second, independent signal that survives even that
+# format — confirmed against the eval set's 21 non-contents pages to produce
+# zero false positives (a page that mentions "chapter 3" once in passing
+# doesn't also enumerate "chapter 1", "chapter 2" and "chapter 3" as
+# structural markers the way a contents page does).
+_CHAPTER_MARKER = re.compile(r"\b(chapter|section)\s+\d*[a-z]?\.?\s", re.IGNORECASE)
+MIN_CHAPTER_MARKERS = 3
+
 
 def looks_like_contents(text: str) -> bool:
     """True for navigation pages — contents, index, list of figures.
@@ -106,8 +121,15 @@ def looks_like_contents(text: str) -> bool:
     entries = len(_TOC_LEADER.findall(text))
     if entries >= MIN_TOC_ENTRIES:
         return True
-    # A heading plus even a couple of entries is conclusive.
-    return bool(_TOC_HEADING.search(text)) and entries >= 2
+    if not _TOC_HEADING.search(text):
+        return False
+    # A heading plus even a couple of leader-dot entries is conclusive...
+    if entries >= 2:
+        return True
+    # ...and so is a heading plus several distinct chapter/section markers,
+    # for a contents page whose entries carry no page numbers to match on.
+    markers = {m.group(0).strip().lower() for m in _CHAPTER_MARKER.finditer(text)}
+    return len(markers) >= MIN_CHAPTER_MARKERS
 
 
 # A short reply that announces it has nothing to say, rather than simply

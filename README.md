@@ -66,47 +66,65 @@ checked for bugs the same way the models are.
 
 Off-the-shelf reading-comprehension benchmarks don't measure "faithful,
 jargon-free rewriting of a real document," so the eval set is hand-built
-from real material — actual SEC earnings filings and real pages from a
-technical book — not synthetic text. An early version of this set used
-hand-trimmed excerpts; re-measuring showed their median length was 266
-characters against a real page's ~1,000–3,400, a gap wide enough that it
-changed which model looked best once real page-scale input was tested.
-The current set (`eval/pages/`) is real, full pages: median 2,376
-characters, matching what the pipeline actually processes.
+from real material, not synthetic text: **25 real pages — 7 companies'
+public earnings releases and 18 pages spanning 4 books** (distributed
+systems, ML engineering, ML inference, and a finance-education text
+chosen specifically because teaching financial concepts to a beginner is
+*exactly* the product's own job, making it the closest genre match to
+what a rewrite is supposed to do). An early version used hand-trimmed
+excerpts; re-measuring showed their median length was 266 characters
+against a real page's ~1,000–3,400, a gap wide enough that it changed
+which model looked best once real page-scale input was tested. The
+current set is real, full pages: median ~2,500 characters, matching what
+the pipeline actually processes.
 
 ### What gets measured, and how
 
-Most of the score is computed **in code**, not asked of a model — a judge
-saying "9/10" isn't evidence a reader got every number:
+Four separate questions, not one blended score — a model (or a prompt
+change) can be strong on one and weak on another, and averaging them
+together would hide exactly the trade-off that matters for a production
+decision. Most of the score is computed **in code**, not asked of a
+model — a judge saying "9/10" isn't evidence a reader got every number:
 
 - **Fidelity** — every distinct figure on the source page has to appear
   in the rewrite, checked by direct extraction and matching, not opinion.
   Reported as a micro-average across all figures in the set (an earnings
   page carries ~30 figures, a prose page 0–1; averaging per-page instead
   would let one missed figure on a prose page outweigh 36 missed on an
-  earnings page).
-- **Fabrication** — a per-page watchlist of real company names *absent*
-  from that page; any that appear in the rewrite were invented. This
-  targets a specific, previously-observed failure mode: a generic
-  reference like "major cloud providers" turning into "Amazon, Google and
-  Microsoft" in the rewrite.
-- **Expansion ratio** — output length over input length. A rewrite that
-  explains jargon and adds a worked example should come out *longer*
-  than its source; a ratio below 1.0 means the page was quietly
-  summarized, which this product is not supposed to do.
-- **Understandability / teaching quality** — the one dimension that
-  can't be counted, so it's judged, but by an **independent model that
-  is never the model being scored**, and asked a narrow, closed question
-  per page ("which of these specific terms did the rewrite actually
-  explain?") rather than a holistic "rate this 0–10" — narrow questions
-  measure far more consistently than open-ended ones. Cross-checked
-  against a closed frontier model as an oracle to catch cases where the
-  evaluating model and a candidate share blind spots.
+  earnings page) — plus a per-page watchlist of real company names
+  *absent* from that specific page, so inventing one is caught the same
+  way a dropped figure is.
+- **Understandability** — judged, since it can't be counted, but by an
+  **independent model that is never the model being scored**, asked a
+  narrow, closed question per page ("which of these specific terms did
+  the rewrite actually explain?") rather than a holistic "rate this
+  0–10" — narrow questions measure far more consistently than
+  open-ended ones.
+- **Formatting** — checked with the *exact same patterns the real
+  pipeline uses* to render a page (the frontend's markdown-stripping
+  logic, the worker's leaked-preamble filter), not a separate
+  approximation of them: stray headings/bullets/unclosed bold, and
+  highlight count against the prompt's own stated budget. This axis
+  caught a real, previously invisible defect — see "Three bugs the eval
+  process itself caught" below.
+- **Structural-content handling** — dedicated table-of-contents pages
+  (one from each of the 4 books), scored on whether the writer correctly
+  produces *nothing* for them, per its own prompt instruction — a
+  rewrite has no argument to restate on a page that's pure navigation,
+  and carrying its page numbers into a re-paginated document only
+  scatters meaningless fragments through the prose.
+- **Expansion ratio** (feeds the fidelity read) — output length over
+  input length. A rewrite that explains jargon and adds a worked example
+  should come out *longer* than its source; a ratio below 1.0 means the
+  page was quietly summarized, which this product is not supposed to do.
 
 ### Results
 
-Eight writer candidates, benchmarked on the same 10 real pages, same
-scoring, evaluated by an independent judge model:
+Eight writer candidates, benchmarked head-to-head on the same real pages,
+same scoring, evaluated by an independent judge model (this comparison
+predates the set's later expansion to 25 pages / 7 companies / 4 books
+described above; re-running it against the larger set is on the list in
+`eval/README.md`, not yet done):
 
 | Model | Open-weight | Fidelity (figures preserved) | Fabricated entities | Understandability |
 |---|---|---|---|---|
@@ -137,17 +155,25 @@ runs *longer* than its source by design, and a full book is hundreds of
 pages. Worth re-checking before quoting elsewhere: OpenRouter pricing
 moves, and this is a live lookup, not a fixed number.
 
-### Two bugs the eval process itself caught
+### Three bugs the eval process itself caught
 
 Worth stating plainly, since it's part of what makes the numbers above
-trustworthy: two real bugs were found and fixed *in the evaluation
-harness*, not just in the models under test — an early version
-mis-averaged fidelity per-page rather than per-figure (letting a
-one-figure prose page outweigh a 36-figure earnings page), and separately
-scored a book's own running-header page number as a fact every model was
-required to preserve, penalizing every candidate for correctly dropping
-it. Both are documented, with the before/after numbers, in
-`eval/pages/README.md` and `eval/README.md`.
+trustworthy: three real bugs were found and fixed as a direct result of
+running this evaluation, and only one of the three was in a model under
+test — the other two were in the harness and the product itself. An
+early version mis-averaged fidelity per-page rather than per-figure
+(letting a one-figure prose page outweigh a 36-figure earnings page), and
+separately scored a book's own running-header page number as a fact
+every model was required to preserve, penalizing every candidate for
+correctly dropping it. Expanding the set to a fourth book genre then
+caught a real gap in the *production* contents-page detector
+(`services/worker/main.py`): it required a leader-dot-then-page-number
+pattern ("Chapter 3 . . . . . 17"), and a finance-education book's table
+of contents lists chapters with no page numbers at all — never matched
+it once. Fixed with a second, independent detection signal, confirmed
+against every non-contents page in the set to produce zero false
+positives before shipping. All three are documented, with the
+before/after numbers, in `eval/pages/README.md` and `eval/README.md`.
 
 ### Running it
 

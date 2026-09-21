@@ -1,0 +1,117 @@
+id: p007-amazon
+source_type: earnings_statement
+source: eval/sources/amazon-q2-2026.md
+company: Amazon
+original_page: "# Amazon — Q2 2026 (quarter ended June 30, 2026)\n\n\n## Headline\
+  \ results\n\nNet sales of $200.6 billion, up 20% year-over-year. Operating income\
+  \ of\n$27.5 billion, up 43% year-over-year. Net income of $62.6 billion, or\n\
+  $5.75 per diluted share, up sharply from $18.2 billion ($1.68/share) in\nQ2 2025.\n\
+  \n## Segment performance\n\n- North America: $116.2B net sales (+16% Y/Y); operating\
+  \ income $9.1B\n (vs. $7.5B prior year)\n- International: $42.2B net sales (+15%\
+  \ Y/Y); operating income $1.7B\n (vs. $1.5B prior year)\n- AWS: $42.2B net sales\
+  \ (+37% Y/Y); operating income $16.6B (vs. $10.2B\n prior year); $169B annualized\
+  \ revenue run rate\n\n## CEO commentary\n\nAndy Jassy: \"AWS is booming, growing\
+  \ 36.7% year-over-year in Q2 — our\nfastest growth in 18 quarters.\" AI and Chips\
+  \ businesses each exceeded\n$25 billion run rates.\n\n## Growth drivers\n\nAI\
+  \ infrastructure investment — specifically Trainium chip commitments\nfrom Anthropic\
+  \ and OpenAI — drove AWS expansion. Advertising grew 26%\nyear-over-year. Same-day\
+  \ or overnight Prime deliveries exceeded 40% of\nitems in the first half of the\
+  \ year. Amazon Bedrock expanded to hundreds\nof thousands of customers; Q2 spending\
+  \ on it exceeded all prior quarters\ncombined.\n\n## Q3 2026 guidance\n\nNet sales\
+  \ of $197.0–202.0 billion (9–12% Y/Y growth). Operating income\nof $22.5–26.5\
+  \ billion, versus $17.4 billion in Q3 2025."
+chars: 1345
+numbers_that_must_survive:
+- as_written: '2026'
+  match: '2026'
+- as_written: $200.6
+  match: '200.6'
+- as_written: 20%
+  match: '20'
+- as_written: $27.5
+  match: '27.5'
+- as_written: 43%
+  match: '43'
+- as_written: $62.6
+  match: '62.6'
+- as_written: $5.75
+  match: '5.75'
+- as_written: $18.2
+  match: '18.2'
+- as_written: $1.68
+  match: '1.68'
+- as_written: '2025'
+  match: '2025'
+- as_written: $116.2
+  match: '116.2'
+- as_written: 16%
+  match: '16'
+- as_written: $9.1
+  match: '9.1'
+- as_written: $7.5
+  match: '7.5'
+- as_written: $42.2
+  match: '42.2'
+- as_written: 15%
+  match: '15'
+- as_written: $1.7
+  match: '1.7'
+- as_written: $1.5
+  match: '1.5'
+- as_written: 37%
+  match: '37'
+- as_written: $16.6
+  match: '16.6'
+- as_written: $10.2
+  match: '10.2'
+- as_written: $169
+  match: '169'
+- as_written: '36.7'
+  match: '36.7'
+- as_written: '18'
+  match: '18'
+- as_written: $25
+  match: '25'
+- as_written: 26%
+  match: '26'
+- as_written: 40%
+  match: '40'
+- as_written: $197.0
+  match: '197.0'
+- as_written: '202.0'
+  match: '202.0'
+- as_written: 12%
+  match: '12'
+- as_written: $22.5
+  match: '22.5'
+- as_written: '26.5'
+  match: '26.5'
+- as_written: $17.4
+  match: '17.4'
+jargon_that_must_be_explained:
+- diluted
+- operating income
+- net income
+- year-over-year
+- guidance
+- run rate
+- annualized
+- infrastructure
+entities_that_must_not_appear:
+- Google
+- Microsoft
+- Azure
+- Apple
+- Meta
+- Facebook
+- Netflix
+- Tesla
+- Walmart
+- Coca-Cola
+- IBM
+- Oracle
+- Salesforce
+- Uber
+- Airbnb
+- Twitter
+- NVIDIA

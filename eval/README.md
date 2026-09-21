@@ -550,6 +550,170 @@ so long.
   OpenRouter accepted connections and stalled rather than failing
   cleanly. Check the balance first when a run inexplicably crawls.
 
+## 2026-09-20: eval set expanded to 25 pages / 7 companies / 4 books, 2 real prompt bugs found and fixed
+
+Requested explicitly: review the eval set again, make it broader and more
+rigorous — multiple companies, multiple document genres, and measurement
+of dimensions beyond fidelity (understandability, **formatting**,
+correct handling of non-prose pages) — then spend real credits
+re-validating the deployed writer against it and fix whatever the numbers
+turn up. All of the below is that work, in order, including what didn't
+work on the first attempt.
+
+### What changed in the eval set itself
+
+- **Companies: 5 → 7.** Added Apple (Q3 FY2026) and Amazon (Q2 2026),
+  both real SEC 8-K exhibits (see `eval/sources/README.md`). Chosen for
+  content the first five didn't cover: Apple's release states a
+  one-time, non-recurring effect (~2 points of gross-margin benefit from
+  tariff refunds) a faithful rewrite has to keep flagged as one-time;
+  Amazon's release names real companies (Anthropic, OpenAI) as actual
+  Trainium customers — the one page in the set where those names
+  *belong* in the rewrite, the opposite direction from the fabrication
+  check on every other page.
+- **Book genres: 1 → 4.** Added real pages from *AI Engineering*,
+  *Inference Engineering*, and *Financial Statements: A Step-by-Step
+  Guide* (a finance-education book — the one source whose entire purpose
+  is teaching financial concepts to a beginner, the closest genre match
+  to what a rewrite is supposed to do). Full rationale in
+  `eval/sources/README.md`.
+- **New category: `contents_page`.** One real table of contents from
+  each of the 4 books, scored on a dedicated binary axis (did the writer
+  correctly produce nothing, per its own prompt instruction) and
+  excluded from every other aggregate — fidelity and expansion don't
+  mean anything for a page that's supposed to come back empty. Full
+  rationale in `eval/pages/README.md`.
+- **New axis: formatting.** `eval/run_page_eval.py` now checks stray
+  markdown (`## heading`, `- bullet`, unclosed `**`) and highlight count,
+  using the *exact same patterns* the real pipeline uses
+  (`stripMarkdown`/`splitBold` in the frontend, `_DECLINED` in
+  `services/worker/main.py`) rather than a separate approximation —
+  formatting compliance here means the real render would have been clean
+  too, not an educated guess about it.
+
+### Bug #1 (free, no API cost): contents-page detector missed an e-book-style TOC with no page numbers
+
+Testing `services/worker/main.py`'s `looks_like_contents` against all 4
+new contents pages — a check that costs nothing, since it's a property
+of the detector, not something that needs a model call — found it missed
+the finance-education book's table of contents entirely: that book lists
+chapters with **no page numbers at all** ("Chapter 1. - Twelve Basic
+Principles / Chapter 2. - The Balance Sheet / ..."), and the detector's
+only signal was a leader-dot-then-page-number pattern. Fixed by adding a
+second, independent signal (3+ distinct "Chapter N"/"Section X" markers
+next to a "Table of Contents" heading), confirmed against all 21
+non-contents pages in the set to produce zero false positives before
+shipping it. Now 4/4.
+
+### Bug #2 (found via the same 4 pages, on the writer side): a real self-contradiction in the prompt
+
+Running the actual *writer* prompt against those same 4 pages (cheap
+model, `deepseek-v4.1-flash`, to keep this part free) found `0/4`
+correctly left empty — worse than the detector alone would suggest,
+since production's deterministic pre-filter already catches these exact
+pages and would never let them reach the model. This was testing the
+prompt's own backstop instruction in isolation, and it failed completely.
+
+Root cause, found by reading the actual output: "Structural and
+reference content" told the writer to reply with nothing for a table of
+contents — 15 lines above a *different* rule, for structural content
+worth keeping (a glossary), whose own worked example was
+`Title .......... 123` → `Title — page 123`. That's literally a
+table-of-contents transformation, described as "a legitimate readability
+improvement." The model wasn't malfunctioning; it was correctly
+following a prompt that contradicted itself. Fixed the example — first
+attempt wasn't enough on its own, though: with the contradiction gone,
+the model just started echoing the TOC back near-verbatim instead of
+producing the required silence. The real root cause was "The one rule
+that matters most" ("when in doubt, keep it") being stated earlier and
+more forcefully than the TOC exception; added an explicit note there
+that recognizing a table of contents is a classification, not a
+"when in doubt" judgment call. Compliance went from 0/4 to a consistent
+majority afterward (exact rate not claimed past "majority" — see the
+run-to-run-variance note above; a handful of runs can't support a
+precise percentage).
+
+### The real validation: claude-sonnet-5 against the full, fixed, 25-page set
+
+Single run (budget did not allow replicates this time — see below):
+
+| metric | result |
+|---|---|
+| fidelity (figures preserved) | 98.7% (2 missed of ~150) |
+| fabricated entities | 3, all on one page |
+| expansion | 2.45x mean, 0 pages shrank |
+| contents pages correct | **4/4** |
+| jargon explained | 75% |
+| teaching (independent judge) | 8.33 / 10 |
+| preamble leaks | **2/21** (≈10%) |
+| highlight count out of range | **15/21** |
+
+The first two rows and the contents-page result are strong and
+consistent with everything measured before. The last two are new,
+real findings this larger, more diverse set surfaced that the smaller
+one had missed:
+
+- **The leaked-preamble fix from 2026-09-17 was not actually complete.**
+  It was validated on a 6-page subset showing zero leaks and shipped as
+  "confirmed... this fixes the leak." This run shows a real ~10%
+  residual rate on a larger, more diverse sample — the earlier validation
+  wasn't wrong about the *direction* of the fix (leak rate did drop
+  sharply, from the original ~90%-of-examples failure this whole
+  mechanism was built to stop), it was wrong to treat 6/6 clean as
+  "fixed" rather than "improved, unconfirmed at this rate." Left as-is
+  rather than patched again without evidence a further change helps —
+  documented honestly here instead.
+- **Severe, previously-undetected over-highlighting**: up to 27 `**bold**`
+  spans on one page (a numerically-dense worked accounting example),
+  15 of 21 pages over even a loose 6-highlight ceiling. The prompt's
+  "roughly two to four" was being read as a suggestion, not a limit,
+  especially on pages with many numbers where every figure felt worth
+  marking. Fixed by rewording it as a hard budget of 4 for the whole
+  page, plus an explicit rule against bolding a title/label as a
+  disguised heading (found in the same output: `**T9. Hiring production
+  workers...**` at the top of a passage). Spot-checked against the 3
+  worst offenders after the fix, same model, same pages:
+
+  | page | before | after |
+  |---|---|---|
+  | financial-statements-p123 | 27 | 7 |
+  | nvidia | 20 | 2 |
+  | alphabet | 19 | 4 |
+
+  Fidelity held at 100% on all three re-tested pages, zero fabrications,
+  zero stray markdown, zero leaks — the fix targeted highlight count
+  specifically and didn't cost anything else measured. Not re-validated
+  against the full 25-page set (budget ran out — see below); the 3-page
+  spot-check is real evidence the fix works, not proof of the new
+  population-wide rate.
+
+- **Fabrication**: 3 invented entities (Amazon, Google, Microsoft) on one
+  Inference Engineering page, in an illustrative analogy — the same
+  documented failure mode from `oracle` mode above, on a new model and a
+  new source. Not addressed this round; noted as an open item.
+
+### What this cost, and why the run stopped where it did
+
+The full 25-page run cost roughly $0.023/page on Claude Sonnet 5 output
+pricing (~$0.57 total). Combined with the cheap-model testing above
+(~$0.01, negligible), the OpenRouter balance went from $0.98 to $0.31
+over this whole investigation. That's why there's one full run and a
+3-page spot-check of the fix rather than a full re-validation or
+replicates: this project's own "Operational notes" above already
+establish that a single run isn't a reliable number (94/58/69% swings
+documented on one page across three runs), so the honest framing of
+everything in this section is "measured once, real evidence, not yet
+statistically confirmed" — re-running with a topped-up balance is the
+direct way to tighten that.
+
+**Next, budget permitting:** re-run the full 8-candidate open-vs-closed
+comparison (currently `eval/README.md`'s 2026-09-17 section and the
+top-level `README.md`'s "Results" table) against this larger 25-page set
+instead of the original 10 — the ranking held on the smaller set, but it
+hasn't been checked against the harder cases this expansion added
+(the real-named-customer page, the no-page-number contents pages, the
+tariff one-time-effect page).
+
 ## 2026-09-17 (earlier): open-source-only requirement dropped, but the closed-model swap didn't pan out
 
 Everything above this section documents real, measured work trying to
