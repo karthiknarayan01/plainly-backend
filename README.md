@@ -222,10 +222,17 @@ threads through every log line the pipeline produces for that job — page
 classification, the writer call, the save to Postgres — as structured
 JSON on stdout, which Cloud Run ingests as Cloud Logging entries
 automatically. Filtering logs on that one ID reconstructs a job's full
-processing sequence end to end. The writer call also reports
-time-to-first-token separately from total completion time; both feed
-Cloud Monitoring log-based metrics (`infra/terraform/metrics.tf`) for
-p95/p99 latency, without a second instrumentation system.
+processing sequence end to end.
+
+Latency here means time-to-first-token, not total completion time — and
+TTFT for a page is measured as the sum of its actual components, not
+one opaque number: how long a page queued before a worker claimed it,
+how long the in-code page-type classifier took, how long the rate
+limiter made the call wait, and how long the model itself took to
+produce a first token. Each is its own Cloud Monitoring metric
+(`infra/terraform/metrics.tf`), so a slow page can be attributed to a
+specific cause — useful for optimization later, not just a dashboard
+number. See `eval/observability/README.md` for the full breakdown.
 
 `dev` is the default/live branch; `main` only advances via a dev → main
 promotion PR.

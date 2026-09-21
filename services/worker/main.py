@@ -15,6 +15,7 @@ import os
 import re
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import db
@@ -198,7 +199,7 @@ def _log_job_transition(new_status: str | None) -> None:
         log("job_failed", severity="WARNING")
 
 
-def process_chunk(client, chunk: dict) -> None:
+def process_chunk(client, chunk: dict, claim_wait_ms: float = 0.0) -> None:
     request_id_var.set(str(chunk["job_id"]))
     chunk_id_var.set(str(chunk["id"]))
     original_text = chunk["original_text"].strip()
@@ -221,9 +222,22 @@ def process_chunk(client, chunk: dict) -> None:
         try:
             # One writer call. No judge, no fact-check, no retry loop —
             # see llm.py's module docstring for what that trades away.
-            task = classify_page_type(original_text)
-            log("page_classified", task=task)
-            rewrite = llm.call_writer(client, chunk["original_text"], task)
+            #
+            # Every component between this page being claimed and its
+            # first visible token is timed and logged separately — not
+            # just the total — specifically so a slow page can be
+            # attributed to a cause (queueing for a worker? rate-limit
+            # throttling? the model itself?) rather than one opaque
+            # number. classify_ms here, throttle_wait_ms + ttft_ms from
+            # llm.call_writer's WriterTiming, and claim_wait_ms passed in
+            # from claim_and_process_loop together sum to
+            # ttft_since_claim_ms below — the full, real time this page
+            # made a reader wait for its first visible output.
+            with Timer() as classify_timer:
+                task = classify_page_type(original_text)
+            classify_ms = classify_timer.elapsed_ms()
+            log("page_classified", task=task, classify_ms=classify_ms)
+            rewrite, llm_timing = llm.call_writer(client, chunk["original_text"], task)
             if is_declined(rewrite):
                 # The model was asked to reply with nothing for a
                 # navigation page and instead explained itself — "(No
@@ -237,8 +251,16 @@ def process_chunk(client, chunk: dict) -> None:
                 # produced; nothing grades a rewrite now.
                 db.save_chunk_result(conn, chunk["id"], rewrite, {}, None, 1)
                 new_status = db.maybe_complete_job(conn, chunk["job_id"])
+            ttft_since_claim_ms = (
+                claim_wait_ms + classify_ms + llm_timing.throttle_wait_ms
+                + (llm_timing.ttft_ms or 0.0)
+            )
             log("page_completed", rewrite_chars=len(rewrite), task=task,
-                duration_ms=page_timer.elapsed_ms())
+                duration_ms=page_timer.elapsed_ms(),
+                claim_wait_ms=claim_wait_ms, classify_ms=classify_ms,
+                throttle_wait_ms=llm_timing.throttle_wait_ms,
+                model_ttft_ms=llm_timing.ttft_ms,
+                ttft_since_claim_ms=round(ttft_since_claim_ms, 1))
             _log_job_transition(new_status)
         except llm.InsufficientCreditsError as exc:
             # Stored as a stable code (llm.FAILURE_INSUFFICIENT_CREDITS),
@@ -290,8 +312,17 @@ def claim_and_process_loop(client, worker_num: int):
             continue
         request_id_var.set(str(chunk["job_id"]))
         chunk_id_var.set(str(chunk["id"]))
-        log("chunk_claimed", worker_lane=worker_num)
-        process_chunk(client, chunk)
+        # Real queueing delay: how long this chunk actually sat waiting
+        # (created_at is TIMESTAMPTZ, so this is timezone-aware) before
+        # any of the CONCURRENT_WORKERS lanes picked it up — not how long
+        # the claim query itself took, which is normally a few ms. Under
+        # real load (all lanes busy) this is where a slow page can
+        # actually originate, not the model call at all.
+        claim_wait_ms = round(
+            (datetime.now(timezone.utc) - chunk["created_at"]).total_seconds() * 1000, 1
+        )
+        log("chunk_claimed", worker_lane=worker_num, claim_wait_ms=claim_wait_ms)
+        process_chunk(client, chunk, claim_wait_ms)
 
 
 def main_loop():

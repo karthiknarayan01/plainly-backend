@@ -31,6 +31,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
+from typing import NamedTuple
 
 from openai import OpenAI
 
@@ -144,8 +145,17 @@ _rate_lock = threading.Lock()
 _recent_calls: deque[float] = deque()
 
 
-def _throttle() -> None:
-    """Blocks until issuing another request stays under REQUESTS_PER_MINUTE."""
+def _throttle() -> float:
+    """Blocks until issuing another request stays under REQUESTS_PER_MINUTE.
+
+    Returns how long this call actually waited, in ms — this is a real,
+    sometimes large contributor to how long a page waits for its first
+    token (the rate limiter existing at all means 16 pages/minute is a
+    hard ceiling under load, independent of how fast the model itself
+    responds), so it's reported as its own component rather than folded
+    silently into the model-call timing in _consume_stream.
+    """
+    start = time.monotonic()
     while True:
         with _rate_lock:
             now = time.monotonic()
@@ -153,7 +163,7 @@ def _throttle() -> None:
                 _recent_calls.popleft()
             if len(_recent_calls) < REQUESTS_PER_MINUTE:
                 _recent_calls.append(now)
-                return
+                return round((time.monotonic() - start) * 1000, 1)
             # Sleep until the oldest call in the window ages out.
             wait = 60.0 - (now - _recent_calls[0]) + 0.05
         time.sleep(max(wait, 0.05))
@@ -259,7 +269,23 @@ def _consume_stream(stream) -> tuple[str, float | None, float, str | None, objec
     return "".join(parts).strip(), ttft_ms, total_ms, finish_reason, usage
 
 
-def call_writer(client: OpenAI, original_text: str, task: str) -> str:
+class WriterTiming(NamedTuple):
+    """One component per thing that can make a page wait for its first
+    token, so a slow page can be attributed to a specific cause rather
+    than one opaque number. throttle_wait_ms + ttft_ms is the model-call
+    contribution; services/worker/main.py adds its own classify_ms and
+    claim_wait_ms on top to get the page's full time-to-first-token from
+    the moment it was claimed off the queue — see page_completed's
+    ttft_breakdown_ms in main.py.
+    """
+    throttle_wait_ms: float
+    ttft_ms: float | None
+    total_ms: float
+    input_tokens: int | None
+    output_tokens: int | None
+
+
+def call_writer(client: OpenAI, original_text: str, task: str) -> tuple[str, WriterTiming]:
     if _credits_likely_exhausted():
         raise InsufficientCreditsError(
             "OpenRouter reported insufficient credits on a recent call; "
@@ -272,18 +298,23 @@ def call_writer(client: OpenAI, original_text: str, task: str) -> str:
         {"role": "user", "content": build_writer_user_message(original_text)},
     ]
     for attempt in range(RATE_LIMIT_RETRIES + 1):
-        _throttle()
+        throttle_wait_ms = _throttle()
         try:
             stream = _create(client, messages)
             rewrite, ttft_ms, total_ms, finish_reason, usage = _consume_stream(stream)
-            log(
-                "llm_call_end", model=WRITER_MODEL, task=task,
-                ttft_ms=ttft_ms, total_ms=total_ms, finish_reason=finish_reason,
+            timing = WriterTiming(
+                throttle_wait_ms=throttle_wait_ms, ttft_ms=ttft_ms, total_ms=total_ms,
                 input_tokens=getattr(usage, "prompt_tokens", None),
                 output_tokens=getattr(usage, "completion_tokens", None),
+            )
+            log(
+                "llm_call_end", model=WRITER_MODEL, task=task,
+                throttle_wait_ms=throttle_wait_ms, ttft_ms=ttft_ms, total_ms=total_ms,
+                finish_reason=finish_reason,
+                input_tokens=timing.input_tokens, output_tokens=timing.output_tokens,
                 rewrite_chars=len(rewrite),
             )
-            return rewrite
+            return rewrite, timing
         except Exception as exc:
             # The SDK sets status_code from the real HTTP response for
             # every APIStatusError, 402 included even though it has no
