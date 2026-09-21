@@ -1,0 +1,64 @@
+id: "024-inference-engineering-transformer-blocks"
+source_type: technical_book
+source: >
+  Real user-uploaded PDF, "Inference Engineering," section 2.2.2
+  (Transformer Blocks). Sourced from the same real production job as
+  008/009/023 (job f0081b63, chunk 53) — original_excerpt is the actual
+  extracted PDF text, not cleaned up.
+
+original_excerpt: >
+  2.2.2 Transformer Blocks 51 Within the transformer blocks, there are
+  sublayers for attention, a feed-forward neural network, and
+  normalization. Figure 2.7: Transformer block diagram, adapted from
+  "Attention Is All You Need" (Vaswani et al., 2017). The feed-forward
+  neural network is a multi-layer perceptron. These linear sublayers make
+  up the majority of the trainable weights within an LLM, while the
+  attention sublayers are the second-largest component. Other components
+  like normalization and activation functions are a rounding error in the
+  model's size.
+
+good_rewrite: >
+  The core building block of a large language model — called a
+  "transformer block" — is made of a few smaller parts stacked together:
+  a piece that handles attention (figuring out which other words in a
+  sentence matter most to understanding the current one), a piece called
+  a feed-forward neural network (a fairly simple kind of network where
+  information only flows in one direction, forward), and a piece that
+  does normalization (keeping the numbers flowing through the network in
+  a stable, well-behaved range so training doesn't go haywire). This
+  design comes from a well-known 2017 research paper called "Attention Is
+  All You Need."
+
+  If you look at where most of a model's actual learned knowledge lives —
+  its trainable weights, the numbers it adjusts while learning — most of
+  it sits in the feed-forward piece, with the attention piece holding the
+  second-largest share. The normalization piece and a few other small
+  parts barely register by comparison — they're so small next to the
+  other two that they don't meaningfully add to the model's overall size.
+
+good_rewrite_rationale: >
+  Keeps all three named sublayers (attention, feed-forward neural
+  network, normalization), the correct size ordering (feed-forward
+  holds the majority of trainable weights, attention is second-largest,
+  normalization/activation functions are negligible), and the citation
+  ("Attention Is All You Need," Vaswani et al., 2017) exactly as given.
+  Explains "trainable weights," "feed-forward neural network," and
+  "normalization" in plain terms without inventing specifics (like exact
+  percentages) the original doesn't provide.
+
+bad_rewrite: >
+  A transformer block is the basic unit of a language model, built from
+  an attention layer and a feed-forward layer, based on the landmark 2017
+  "Attention" paper. The attention layer does most of the heavy lifting
+  in terms of the model's size.
+
+bad_rewrite_rationale: >
+  Reverses the actual size ordering from the original: the feed-forward
+  sublayers hold the majority of trainable weights, with attention as the
+  second-largest — the rewrite instead claims attention "does most of the
+  heavy lifting in terms of the model's size," a direct Distortion of
+  which component is actually largest. Also drops normalization as a
+  named component entirely (Loss), and drops the "rounding error" framing
+  that told the reader normalization and activation functions are
+  negligible by comparison — replaced with silence on the topic rather
+  than the original's explicit point about their relative size.

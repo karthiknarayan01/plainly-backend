@@ -1,0 +1,56 @@
+id: "010-nvidia-gaap-nongaap-conflation"
+source_type: earnings_statement
+source: eval/sources/nvidia-q2-fy2027.md
+
+original_excerpt: >
+  NVIDIA's results by GAAP: Operating income $63.7 billion (+124% Y/Y); net income $59.7
+  billion (+126% Y/Y); diluted EPS $2.46 (+128% Y/Y).
+
+  Non-GAAP: Operating income $64.0 billion (+124% Y/Y); net income $54.0
+  billion (+118% Y/Y); diluted EPS $2.22 (+120% Y/Y).
+
+good_rewrite: >
+  NVIDIA reports its profit two ways, using two different sets of
+  accounting rules, and both are worth knowing because they don't match.
+
+  Using the standard rules every public company must follow (called
+  GAAP), NVIDIA made $63.7 billion in operating income — money left over
+  after running the business, before taxes and a few other items — up
+  124% from a year ago. After those remaining items, net income (what's
+  actually left at the end) was $59.7 billion, up 126%. Divided across
+  all its shares, that works out to $2.46 per share, up 128%.
+
+  NVIDIA also reports an adjusted version (called non-GAAP) that strips
+  out certain one-time or non-cash costs the company doesn't think
+  reflect its everyday business. Under that version, operating income was
+  $64.0 billion (also up 124%), but net income was lower — $54.0 billion,
+  up 118% — because the adjustments that raise operating income don't
+  all carry through the same way to the final net income figure. Per
+  share, that's $2.22, up 120%.
+
+good_rewrite_rationale: >
+  Keeps both sets of numbers fully separate and labeled (GAAP operating
+  income/net income/EPS: $63.7B/$59.7B/$2.46; non-GAAP: $64.0B/$54.0B/
+  $2.22) rather than merging them into one "profit" figure — this is
+  exactly the kind of passage where a rewrite is tempted to simplify by
+  picking one number and calling it "the profit," which would silently
+  drop real information (the company reports both because they tell
+  different stories, and non-GAAP net income is actually LOWER than GAAP
+  here, an easy detail to lose). Explains GAAP/non-GAAP in plain terms
+  without inventing extra specifics about what the adjustments are.
+
+bad_rewrite: >
+  NVIDIA's profit numbers looked great this quarter. Operating income was
+  about $64 billion, up 124% from last year, and the company earned
+  roughly $2.30 per share on average — a huge jump from a year ago.
+
+bad_rewrite_rationale: >
+  This is the precise-term-substitution failure: GAAP and non-GAAP
+  operating income ($63.7B vs $64.0B) get silently averaged/merged into
+  "about $64 billion," and the two different net income figures ($59.7B
+  GAAP vs $54.0B non-GAAP — a real $5.7B difference) disappear entirely,
+  replaced by an invented "$2.30 per share on average" that isn't either
+  of the two real EPS figures ($2.46 GAAP, $2.22 non-GAAP) — a number
+  that sounds plausible and "reads right" but was never actually
+  reported. A reader has no way to know this rewrite quietly invented an
+  average that doesn't correspond to anything the company said.

@@ -1,0 +1,43 @@
+id: "022-alphabet-ceo-commentary-numbers"
+source_type: earnings_statement
+source: eval/sources/alphabet-q2-2026.md
+
+original_excerpt: >
+  Sundar Pichai: "AI investments are redefining what's possible across
+  every part of our business." Cited 82% Google Cloud growth, ~90% of
+  Fortune 100 using Gemini Enterprise, 22 billion Gemini API tokens
+  processed per minute, 950 million Gemini App monthly active users.
+
+good_rewrite: >
+  Alphabet's CEO, Sundar Pichai, said the company's spending on AI is
+  changing what's possible in every part of the business. He pointed to
+  a few numbers to back that up: Google Cloud's revenue grew 82% this
+  quarter; roughly 90 out of the 100 largest U.S. companies (the
+  "Fortune 100" list) are now using Google's business AI product, called
+  Gemini Enterprise; Google's AI systems are processing 22 billion small
+  units of text (called "tokens") every single minute; and Google's
+  Gemini App now has 950 million people using it at least once a month.
+
+good_rewrite_rationale: >
+  Preserves all four specific figures Pichai cited (82% Google Cloud
+  growth, ~90% Fortune 100 adoption of Gemini Enterprise, 22 billion
+  tokens per minute, 950 million Gemini App MAU) rather than replacing
+  them with a vague "AI is doing well" summary — a quote citing four
+  distinct proof points loses its actual substance if the rewrite keeps
+  only the sentiment and drops the evidence. Explains "tokens" and "MAU"
+  (monthly active users) briefly rather than leaving them as unexplained
+  jargon.
+
+bad_rewrite: >
+  CEO Sundar Pichai said AI is transforming every part of Alphabet's
+  business, citing strong growth in Google Cloud and rapid adoption of
+  Gemini across enterprises and consumers.
+
+bad_rewrite_rationale: >
+  Keeps only the sentiment ("AI is transforming... strong growth...
+  rapid adoption") and drops all four specific numbers the original
+  quote actually cites (82%, ~90% of Fortune 100, 22 billion tokens per
+  minute, 950 million MAU) — this is a real Loss, not a simplification:
+  a CEO quote citing hard evidence has a different, more substantive
+  meaning than one making an unsupported claim, and this rewrite turns
+  the former into the latter.

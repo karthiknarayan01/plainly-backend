@@ -1,0 +1,74 @@
+name: Deploy to GCP
+
+# dev is the live branch (same convention as the other repos) — every
+# push here redeploys. main only ever advances via the promotion PR, so
+# it intentionally does not trigger a deploy on its own.
+on:
+  push:
+    branches: [dev]
+
+env:
+  PROJECT_ID: plainly-backend-440007
+  REGION: us-central1
+
+permissions:
+  id-token: write # required for Workload Identity Federation — no stored key
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/529271112301/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: plainly-deployer@plainly-backend-440007.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # Both builds and both deploys are independent of each other
+      # (if: always(), each deploy gated only on its own build's outcome
+      # via steps.build_x.outcome) so one service failing can't skip or
+      # hide whether the other succeeded.
+
+      - name: Build and push API image
+        id: build_api
+        if: always()
+        run: |
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/api:${{ github.sha }}
+          docker build -t "$IMAGE" services/api
+          docker push "$IMAGE"
+          echo "API_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Build and push worker image
+        id: build_worker
+        if: always()
+        run: |
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/plainly/worker:${{ github.sha }}
+          # Root context, not services/worker — the worker needs prompts/
+          # (outside services/worker/) copied into the image too.
+          docker build -t "$IMAGE" -f services/worker/Dockerfile .
+          docker push "$IMAGE"
+          echo "WORKER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy API to Cloud Run
+        if: always() && steps.build_api.outcome == 'success'
+        run: |
+          gcloud run deploy plainly-api \
+            --image="$API_IMAGE" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Deploy worker to Cloud Run
+        if: always() && steps.build_worker.outcome == 'success'
+        run: |
+          gcloud run deploy plainly-worker \
+            --image="$WORKER_IMAGE" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"

@@ -1,0 +1,45 @@
+id: "011-nvidia-guidance-caveat"
+source_type: earnings_statement
+source: eval/sources/nvidia-q2-fy2027.md
+
+original_excerpt: >
+  NVIDIA's guidance for next quarter: Revenue $108.0 billion (±2%); gross margin 74.0% (±50bps, GAAP/non-GAAP);
+  GAAP opex ~$9.2 billion; non-GAAP opex ~$9.0 billion; full-year FY2027
+  tax rate 16-18%. Guidance excludes China data center compute revenue.
+
+good_rewrite: >
+  Looking ahead to the next quarter, NVIDIA expects revenue of about
+  $108 billion, though it could land 2% higher or lower than that. It
+  expects to keep about 74 cents of every revenue dollar as gross profit,
+  give or take half a percentage point. Spending on running the business
+  should be around $9.2 billion under standard accounting rules, or about
+  $9.0 billion under NVIDIA's adjusted way of counting. For the full
+  year, the company expects to pay 16% to 18% of its profit in taxes.
+
+  One important catch: none of these numbers include any revenue NVIDIA
+  might make from selling AI computing chips for Chinese data centers.
+  That business is left out of the forecast entirely — so if it happens,
+  the real results could end up higher than what's predicted here.
+
+good_rewrite_rationale: >
+  Preserves every number in the guidance range (108B ±2%, 74.0% ±50bps,
+  9.2B/9.0B opex, 16-18% tax rate) and, critically, keeps the China
+  exclusion caveat as a clearly flagged, separate point rather than
+  letting it get cut for brevity — this qualifier fundamentally changes
+  what the guidance numbers mean (they're a floor that excludes a real,
+  named revenue source, not a complete forecast), so dropping it would be
+  a serious loss even though it's the last sentence of the original.
+
+bad_rewrite: >
+  For next quarter, NVIDIA is forecasting around $108 billion in revenue
+  with a gross margin near 74%. Operating costs should stay close to $9
+  billion, and the company expects to pay 16-18% in taxes for the year.
+
+bad_rewrite_rationale: >
+  Drops the "guidance excludes China data center compute revenue" caveat
+  entirely — a real Loss, and a consequential one: without it, a reader
+  has no way to know these numbers are missing a whole category of
+  potential revenue, which matters enormously for anyone trying to judge
+  whether the forecast is conservative or complete. Also merges GAAP opex
+  ($9.2B) and non-GAAP opex ($9.0B) into a single "close to $9 billion,"
+  losing the fact that two different figures were given.

@@ -1,0 +1,160 @@
+id: p005-reddit
+source_type: earnings_statement
+source: eval/sources/reddit-q2-2026.md
+company: Reddit
+original_page: '# Reddit — Q2 2026 (quarter ended June 30, 2026)
+
+
+
+  ## Headline results
+
+
+  Daily Active Uniques +18% Y/Y to 130.3 million; Weekly Active Uniques
+
+  +24% to 514.6 million.
+
+
+  ## Revenue
+
+
+  Total revenue $805 million, +61% Y/Y — eighth consecutive quarter above
+
+  60% growth. Ad revenue $762 million (+64%); international revenue $167
+
+  million (+84%).
+
+
+  ## Profitability
+
+
+  Net income $253 million (31% margin), more than doubling Y/Y. Diluted
+
+  EPS $1.25, up over 2x Y/Y. Adjusted EBITDA $343 million (43% margin),
+
+  +106% Y/Y. Gross margin 91.3% (+50bps).
+
+
+  ## Cash flow
+
+
+  Operating cash flow $262 million (+135% Y/Y); free cash flow $261
+
+  million. Liquid assets $2.786 billion.
+
+
+  ## CEO commentary
+
+
+  Steve Huffman: "In an increasingly automated web, the value of real
+
+  human perspective has never been higher. Reddit''s commercial momentum
+
+  reflects that."
+
+
+  ## Q3 2026 guidance
+
+
+  Revenue $860-$870 million; Adjusted EBITDA $385-$395 million.
+
+
+  ## Geography
+
+
+  U.S. revenue $638 million (+56%); international $167 million (+84%);
+
+  global ARPU $6.18 (+36%).'
+chars: 1023
+numbers_that_must_survive:
+- as_written: '2026'
+  match: '2026'
+- as_written: 18%
+  match: '18'
+- as_written: '130.3'
+  match: '130.3'
+- as_written: 24%
+  match: '24'
+- as_written: '514.6'
+  match: '514.6'
+- as_written: $805
+  match: '805'
+- as_written: 61%
+  match: '61'
+- as_written: 60%
+  match: '60'
+- as_written: $762
+  match: '762'
+- as_written: 64%
+  match: '64'
+- as_written: $167
+  match: '167'
+- as_written: 84%
+  match: '84'
+- as_written: $253
+  match: '253'
+- as_written: 31%
+  match: '31'
+- as_written: $1.25
+  match: '1.25'
+- as_written: $343
+  match: '343'
+- as_written: 43%
+  match: '43'
+- as_written: 106%
+  match: '106'
+- as_written: '91.3'
+  match: '91.3'
+- as_written: $262
+  match: '262'
+- as_written: 135%
+  match: '135'
+- as_written: $261
+  match: '261'
+- as_written: $2.786
+  match: '2.786'
+- as_written: $860
+  match: '860'
+- as_written: $870
+  match: '870'
+- as_written: $385
+  match: '385'
+- as_written: $395
+  match: '395'
+- as_written: $638
+  match: '638'
+- as_written: 56%
+  match: '56'
+- as_written: $6.18
+  match: '6.18'
+jargon_that_must_be_explained:
+- EPS
+- diluted
+- gross margin
+- net income
+- free cash flow
+- operating cash flow
+- EBITDA
+- ARPU
+- guidance
+entities_that_must_not_appear:
+- Amazon
+- AWS
+- Google
+- Microsoft
+- Azure
+- Apple
+- Meta
+- Facebook
+- Netflix
+- Tesla
+- Walmart
+- Coca-Cola
+- IBM
+- Oracle
+- Salesforce
+- Uber
+- Airbnb
+- Twitter
+- OpenAI
+- Anthropic
+- NVIDIA

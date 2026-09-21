@@ -1,0 +1,134 @@
+id: p003-alphabet
+source_type: earnings_statement
+source: eval/sources/alphabet-q2-2026.md
+company: Alphabet
+original_page: "# Alphabet — Q2 2026 (quarter ended June 30, 2026)\n\n\n## Headline\
+  \ results\n\nConsolidated revenues $119.8 billion, +24% Y/Y (+23% constant currency)\n\
+  — the 12th consecutive quarter of double-digit revenue growth.\n\n## Segment breakdown\n\
+  \n- Google Services: $94.5 billion (+15% Y/Y)\n - Google Search & other: $63.3\
+  \ billion (+17%)\n - YouTube ads: $11.1 billion (+13%)\n - Subscriptions, platforms,\
+  \ devices: $12.9 billion (+15%)\n- Google Cloud: $24.8 billion (+82% Y/Y) — acceleration\
+  \ driven by\n enterprise AI Solutions and enterprise AI Infrastructure\n- Other\
+  \ Bets: $382 million\n\n## Profitability\n\nOperating income $40.8 billion (+30%\
+  \ Y/Y); operating margin 34%\n(+2 percentage points). Net income available to\
+  \ common stockholders\n$112.1 billion (+298% Y/Y); diluted EPS $9.11 (+294% Y/Y)\
+  \ — the\nextraordinary net income jump reflects $98.0 billion in other income,\n\
+  primarily unrealized gains on equity securities.\n\n## CEO commentary\n\nSundar\
+  \ Pichai: \"AI investments are redefining what's possible across\nevery part of\
+  \ our business.\" Cited 82% Google Cloud growth, ~90% of\nFortune 100 using Gemini\
+  \ Enterprise, 22 billion Gemini API tokens\nprocessed per minute, 950 million\
+  \ Gemini App monthly active users.\n\n## Capital allocation & balance sheet\n\n\
+  Raised $49.6 billion via equity issuance in June 2026. Established a\n$40.0 billion\
+  \ At-the-Market program (unutilized as of June 30). Issued\n$20.3 billion in senior\
+  \ unsecured notes. Quarterly dividend $0.22/common\nshare; preferred dividend\
+  \ $12.15/share (~$0.60/depositary share).\n\n## Cash flow\n\nYTD operating cash\
+  \ flow $84.9 billion; capex $80.6 billion; trailing\ntwelve-month free cash flow\
+  \ $53.3 billion (Q2 alone was negative,\n-$5.9 billion, due to elevated AI-infrastructure\
+  \ capex)."
+chars: 1719
+numbers_that_must_survive:
+- as_written: '2026'
+  match: '2026'
+- as_written: '30'
+  match: '30'
+- as_written: $119.8
+  match: '119.8'
+- as_written: 24%
+  match: '24'
+- as_written: 23%
+  match: '23'
+- as_written: $94.5
+  match: '94.5'
+- as_written: 15%
+  match: '15'
+- as_written: $63.3
+  match: '63.3'
+- as_written: 17%
+  match: '17'
+- as_written: $11.1
+  match: '11.1'
+- as_written: 13%
+  match: '13'
+- as_written: $12.9
+  match: '12.9'
+- as_written: $24.8
+  match: '24.8'
+- as_written: 82%
+  match: '82'
+- as_written: $382
+  match: '382'
+- as_written: $40.8
+  match: '40.8'
+- as_written: 34%
+  match: '34'
+- as_written: $112.1
+  match: '112.1'
+- as_written: 298%
+  match: '298'
+- as_written: $9.11
+  match: '9.11'
+- as_written: 294%
+  match: '294'
+- as_written: $98.0
+  match: '98.0'
+- as_written: 90%
+  match: '90'
+- as_written: '100'
+  match: '100'
+- as_written: '22'
+  match: '22'
+- as_written: '950'
+  match: '950'
+- as_written: $49.6
+  match: '49.6'
+- as_written: $40.0
+  match: '40.0'
+- as_written: $20.3
+  match: '20.3'
+- as_written: $0.22
+  match: '0.22'
+- as_written: $12.15
+  match: '12.15'
+- as_written: $0.60
+  match: '0.60'
+- as_written: $84.9
+  match: '84.9'
+- as_written: $80.6
+  match: '80.6'
+- as_written: $53.3
+  match: '53.3'
+- as_written: $5.9
+  match: '5.9'
+jargon_that_must_be_explained:
+- EPS
+- diluted
+- operating margin
+- operating income
+- net income
+- free cash flow
+- operating cash flow
+- constant currency
+- balance sheet
+- infrastructure
+- token
+entities_that_must_not_appear:
+- Amazon
+- AWS
+- Microsoft
+- Azure
+- Apple
+- Meta
+- Facebook
+- Netflix
+- Tesla
+- Walmart
+- Coca-Cola
+- IBM
+- Oracle
+- Salesforce
+- Uber
+- Airbnb
+- Twitter
+- OpenAI
+- Anthropic
+- NVIDIA

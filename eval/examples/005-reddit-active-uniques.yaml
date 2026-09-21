@@ -1,0 +1,55 @@
+id: "005-reddit-active-uniques"
+source_type: earnings_statement
+source: eval/sources/reddit-q2-2026.md
+
+original_excerpt: >
+  Reddit reported Daily Active Uniques +18% Y/Y to 130.3 million; Weekly Active Uniques
+  +24% to 514.6 million. Total revenue $805 million, +61% Y/Y — eighth
+  consecutive quarter above 60% growth. Adjusted EBITDA $343 million (43%
+  margin), +106% Y/Y.
+
+good_rewrite: >
+  Reddit counted 130.3 million people who used the site on an average
+  day this quarter, 18% more than a year ago. Over a full week, 514.6
+  million different people showed up at least once — 24% more than a
+  year ago. (The weekly number is bigger than the daily one just because
+  it counts everyone who visited any day that week, not the same 130
+  million people seven times over.)
+
+  Revenue — the money Reddit brought in, mostly from ads — was $805
+  million, up 61% from a year ago. That's the eighth quarter in a row
+  where revenue grew by more than 60%, so this isn't a one-off jump.
+
+  Adjusted EBITDA was $343 million, more than double what it was a year
+  ago. This is a profit measure companies use that leaves out certain
+  costs like interest, taxes, and depreciation (the gradual loss of
+  value in equipment) — think of it as a rough read on how profitable
+  the core business is, before those extra items are subtracted. It came
+  to 43 cents of every revenue dollar.
+
+good_rewrite_rationale: >
+  Explains three distinct pieces of jargon a reader with no
+  finance/product-metrics background would stumble on: "Daily Active
+  Uniques" vs "Weekly Active Uniques" (and, unprompted, why the weekly
+  number is larger — a real reader confusion this anticipates rather
+  than waits to be asked), and "Adjusted EBITDA" (defined in plain terms,
+  not just expanded acronym). Keeps every number (130.3M, 18%, 514.6M,
+  24%, 805M, 61%, eighth quarter, 343M, 106%, 43%). This is the judge's
+  "no unexplained jargon" bar applied across an excerpt with three
+  separate terms in three sentences, not just one.
+
+bad_rewrite: >
+  Reddit's DAUs grew 18% to 130.3 million and WAUs grew 24% to 514.6
+  million. Revenue hit $805 million (+61% Y/Y), the eighth straight
+  quarter above 60% growth. Adjusted EBITDA more than doubled to $343
+  million, a 43% margin.
+
+bad_rewrite_rationale: >
+  Barely rewrites the original at all — swaps "Daily Active Uniques" for
+  "DAUs" and "Weekly Active Uniques" for "WAUs," which makes it less
+  accessible, not more. "Y/Y" and "Adjusted EBITDA" are left completely
+  unexplained. A reader with no background in these terms gets nothing
+  they didn't already have in the source. This is the judge's
+  "unexplained jargon" and "readability" checks both failing on the same
+  rewrite — it preserves every fact perfectly (no fidelity violation)
+  but fails the actual point of the product.

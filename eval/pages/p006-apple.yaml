@@ -1,0 +1,162 @@
+id: p006-apple
+source_type: earnings_statement
+source: eval/sources/apple-q3-fy2026.md
+company: Apple
+original_page: '# Apple — Q3 FY2026 (quarter ended June 27, 2026)
+
+
+
+  ## Headline results
+
+
+  Revenue of $109.4 billion, up 16% year-over-year — the company''s
+
+  strongest June quarter ever. Diluted EPS of $2.02, up 29% year-over-year.
+
+
+  ## Gross margin
+
+
+  Gross margin was 50.1%, including roughly 2 percentage points of
+
+  favorable impact from tariff refunds — the same refunds added $0.11 per
+
+  share to diluted EPS. Both effects are one-time, not a change to the
+
+  underlying margin trend.
+
+
+  ## Segment revenue (Q3 FY2026 vs. Q3 FY2025)
+
+
+  - Americas: $45.8B vs. $41.2B
+
+  - Europe: $29.4B vs. $24.0B
+
+  - Greater China: $18.8B vs. $15.4B
+
+  - Japan: $6.6B vs. $5.8B
+
+  - Rest of Asia Pacific: $8.9B vs. $7.7B
+
+
+  ## Product category revenue (Q3 FY2026 vs. Q3 FY2025)
+
+
+  - iPhone: $54.3B vs. $44.6B
+
+  - Mac: $10.4B vs. $8.0B
+
+  - iPad: $6.2B vs. $6.6B
+
+  - Wearables, Home and Accessories: $7.9B vs. $7.4B
+
+  - Services: $30.7B vs. $27.4B
+
+
+  ## CEO commentary
+
+
+  Tim Cook cited "double-digit revenue growth across iPhone, Mac and
+
+  Services," the introduction of "all-new Siri AI" at WWDC26, and new
+
+  child safety features.
+
+
+  ## Other highlights
+
+
+  Operating cash flow set a June-quarter record. The active installed base
+
+  reached an all-time high across every product category and geographic
+
+  segment. The board declared a quarterly dividend of $0.27/share. No
+
+  explicit forward guidance was given in the release.'
+chars: 1341
+numbers_that_must_survive:
+- as_written: '27'
+  match: '27'
+- as_written: '2026'
+  match: '2026'
+- as_written: $109.4
+  match: '109.4'
+- as_written: 16%
+  match: '16'
+- as_written: $2.02
+  match: '2.02'
+- as_written: 29%
+  match: '29'
+- as_written: '50.1'
+  match: '50.1'
+- as_written: $0.11
+  match: '0.11'
+- as_written: $45.8
+  match: '45.8'
+- as_written: $41.2
+  match: '41.2'
+- as_written: $29.4
+  match: '29.4'
+- as_written: $24.0
+  match: '24.0'
+- as_written: $18.8
+  match: '18.8'
+- as_written: $15.4
+  match: '15.4'
+- as_written: $6.6
+  match: '6.6'
+- as_written: $5.8
+  match: '5.8'
+- as_written: $8.9
+  match: '8.9'
+- as_written: $7.7
+  match: '7.7'
+- as_written: $54.3
+  match: '54.3'
+- as_written: $44.6
+  match: '44.6'
+- as_written: $10.4
+  match: '10.4'
+- as_written: $8.0
+  match: '8.0'
+- as_written: $6.2
+  match: '6.2'
+- as_written: $7.9
+  match: '7.9'
+- as_written: $7.4
+  match: '7.4'
+- as_written: $30.7
+  match: '30.7'
+- as_written: $27.4
+  match: '27.4'
+- as_written: $0.27
+  match: '0.27'
+jargon_that_must_be_explained:
+- EPS
+- diluted
+- gross margin
+- operating cash flow
+- year-over-year
+- guidance
+entities_that_must_not_appear:
+- Amazon
+- AWS
+- Google
+- Microsoft
+- Azure
+- Meta
+- Facebook
+- Netflix
+- Tesla
+- Walmart
+- Coca-Cola
+- IBM
+- Oracle
+- Salesforce
+- Uber
+- Airbnb
+- Twitter
+- OpenAI
+- Anthropic
+- NVIDIA

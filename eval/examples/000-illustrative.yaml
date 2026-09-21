@@ -1,0 +1,39 @@
+# SYNTHETIC EXAMPLE — for format illustration only.
+# This is not a real filing excerpt and should not be used for training
+# or scoring. It exists to show the schema. Replace with real examples.
+
+id: "000-illustrative"
+source_type: earnings_statement
+
+original_excerpt: >
+  Gross margin contracted 340 basis points year-over-year to 41.2%,
+  primarily attributable to unfavorable product mix and elevated input
+  costs, partially offset by pricing actions implemented in Q3.
+
+good_rewrite: >
+  The company kept less profit from each dollar of sales this year. Out
+  of every dollar of sales, it kept 41.2 cents as profit before other
+  costs — down from about 44.6 cents the year before. Two things caused
+  this: the company sold more of its lower-profit products than usual,
+  and it cost more to make its products. Raising prices in the third
+  quarter helped some, but not enough to fully make up for the drop.
+
+good_rewrite_rationale: >
+  Keeps every number (41.2%, the 340-basis-point drop restated as the
+  prior-year figure, Q3 timing) and every cause (product mix, input
+  costs, pricing actions), explains "basis points" and "gross margin" in
+  plain terms instead of using the jargon, and explains the mechanism
+  (why mix and cost changes lower margin) rather than just restating the
+  conclusion.
+
+bad_rewrite: >
+  The company's profit margin went down a bit this year because of
+  higher costs, though it tried to raise prices to help.
+
+bad_rewrite_rationale: >
+  Drops the actual number (41.2%) and the size of the change (340 basis
+  points) — both real losses. Drops the product mix cause entirely
+  (loss). "A bit" understates a real, specific change (distortion). Also
+  fails the explanation-over-assertion check: it asserts the price
+  increase "tried to help" without saying it wasn't quite enough, which
+  the original supports.

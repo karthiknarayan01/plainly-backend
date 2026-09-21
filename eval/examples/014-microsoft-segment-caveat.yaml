@@ -1,0 +1,41 @@
+id: "014-microsoft-segment-caveat"
+source_type: earnings_statement
+source: eval/sources/microsoft-q4-fy2026.md
+
+original_excerpt: >
+  An earlier 2026 8-K disclosed Microsoft's updated segment structure
+  beginning FY2027: two reportable segments, "Agents and Infra" and
+  "Devices and Consumer" — worth knowing since segment-level historical
+  comparisons may shift under the new structure.
+
+good_rewrite: >
+  One more thing worth knowing: Microsoft already told investors,
+  earlier this year, that starting with fiscal year 2027 it's changing
+  how it groups its businesses for reporting purposes. Instead of the
+  segments used before, it will report under two new ones: "Agents and
+  Infra" and "Devices and Consumer." Because of this, comparing
+  segment-level numbers from before the change to numbers after the
+  change may not be a fair, apples-to-apples comparison anymore — the
+  categories themselves are shifting, not just the numbers inside them.
+
+good_rewrite_rationale: >
+  Preserves both new segment names exactly ("Agents and Infra," "Devices
+  and Consumer") and, most importantly, keeps the actual point of this
+  note — that historical segment comparisons become unreliable after the
+  change — rather than treating it as a throwaway detail. This is a
+  forward-looking structural caveat that changes how a reader should
+  interpret future reports, not just a fact about the past, so losing it
+  would quietly remove context a careful reader needs.
+
+bad_rewrite: >
+  Microsoft also announced it's reorganizing into two new business
+  segments next year: Agents and Infra, and Devices and Consumer.
+
+bad_rewrite_rationale: >
+  Keeps the two segment names but drops the entire point of the original
+  sentence — that this reorganization means segment-level historical
+  comparisons "may shift" and shouldn't be read as apples-to-apples
+  anymore. A reader of this rewrite would have no idea that future
+  segment reports need this caveat in mind; the original wasn't just
+  announcing a reorg; it was warning about a specific interpretive
+  consequence of it, and that warning is gone (Loss).

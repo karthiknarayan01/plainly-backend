@@ -1,0 +1,51 @@
+id: "019-reddit-arpu-cashflow"
+source_type: earnings_statement
+source: eval/sources/reddit-q2-2026.md
+
+original_excerpt: >
+  Reddit's operating cash flow was $262 million (+135% Y/Y); free cash flow $261
+  million. Liquid assets $2.786 billion. U.S. revenue $638 million
+  (+56%); international $167 million (+84%); global ARPU $6.18 (+36%).
+
+good_rewrite: >
+  Reddit brought in $262 million in actual cash from running its
+  business this quarter — more than double what it brought in a year
+  ago (up 135%). After accounting for the money it spent on equipment and
+  other long-term investments, it had $261 million left over as free
+  cash flow — cash it's genuinely free to use however it wants. On top
+  of that, Reddit is sitting on $2.786 billion in cash and similar
+  easy-to-access assets.
+
+  Breaking down where the money came from: $638 million came from users
+  in the U.S. (up 56%), and $167 million came from users outside the
+  U.S. (up 84% — growing faster than the U.S., even though it's still
+  the smaller piece). On average, Reddit made $6.18 per user worldwide
+  this quarter — a number called ARPU (average revenue per user) that
+  companies use to track how much money each user is worth, on average,
+  regardless of how many total users there are. That per-user figure is
+  up 36% from a year ago.
+
+good_rewrite_rationale: >
+  Keeps operating cash flow ($262M) and free cash flow ($261M) as two
+  distinct, correctly-labeled figures (they happen to be close in value
+  here, which makes it especially easy for a careless rewrite to treat
+  them as interchangeable or pick just one) and explains "ARPU" instead
+  of leaving the abbreviation unexplained or dropping the metric
+  entirely. Preserves the U.S./international revenue split and each
+  region's own growth rate rather than only reporting the global total.
+
+bad_rewrite: >
+  Reddit generated $262 million in free cash flow this quarter and had
+  strong revenue growth internationally. ARPU also grew nicely.
+
+bad_rewrite_rationale: >
+  Swaps operating cash flow ($262M) for free cash flow, when the real
+  free cash flow figure was $261 million — a small but real
+  precise-term-substitution error, exactly the class of mistake that's
+  easy to wave off as "basically the same number" but isn't the number
+  that was actually reported under that name. Also drops every concrete
+  figure for the U.S./international breakdown ($638M/$167M and their
+  growth rates), the $2.786 billion liquid assets figure, the actual
+  ARPU value ($6.18) and its growth rate (36%), and never explains what
+  ARPU stands for — "grew nicely" tells a reader nothing a real number
+  would.

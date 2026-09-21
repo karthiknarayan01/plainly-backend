@@ -1,0 +1,54 @@
+id: "015-alphabet-cashflow-conflation"
+source_type: earnings_statement
+source: eval/sources/alphabet-q2-2026.md
+
+original_excerpt: >
+  Alphabet's YTD operating cash flow was $84.9 billion; capex $80.6 billion; trailing
+  twelve-month free cash flow $53.3 billion (Q2 alone was negative,
+  -$5.9 billion, due to elevated AI-infrastructure capex).
+
+good_rewrite: >
+  Here's what's happened to Alphabet's cash so far this year. The actual
+  cash coming in from running the business (called operating cash flow)
+  was $84.9 billion for the year so far. But Alphabet also spent a lot
+  building things — data centers, servers, that kind of infrastructure
+  (called capital expenditures, or capex) — $80.6 billion of it.
+
+  Subtract spending like that from cash coming in, and you get what's
+  called free cash flow — the actual cash left over that Alphabet is
+  free to use however it wants (pay dividends, buy back stock, save it).
+  Looking at the last twelve months as a whole, that number is $53.3
+  billion. But zoom in on just this one quarter, and it was actually
+  negative — Alphabet spent $5.9 billion more than it brought in — because
+  spending on AI infrastructure was unusually high this quarter
+  specifically.
+
+good_rewrite_rationale: >
+  Keeps three genuinely different cash figures cleanly distinguished:
+  operating cash flow ($84.9B, YTD), capex ($80.6B, YTD), and free cash
+  flow (two different numbers for two different windows: $53.3B
+  trailing-twelve-months vs. -$5.9B for Q2 alone). This is exactly the
+  kind of passage where "free cash flow," "operating cash flow," and
+  "profit" are easy to blur into one generic "how much money did they
+  make" — the rewrite instead explains what each term specifically means
+  and why they can move in different directions (a company can have
+  positive operating cash flow and still have negative free cash flow in
+  a heavy-spending quarter, which is exactly what happened here).
+
+bad_rewrite: >
+  Alphabet's cash flow looked strong this year, with $84.9 billion in
+  free cash flow, though the company spent heavily on AI infrastructure,
+  which cut into profits this quarter.
+
+bad_rewrite_rationale: >
+  This is the precise-term-substitution failure: $84.9 billion was
+  operating cash flow, not free cash flow — the real trailing-twelve-
+  month free cash flow figure ($53.3 billion) is a completely different,
+  smaller number, and the real Q2-specific free cash flow was actually
+  negative (-$5.9 billion), the opposite of "looked strong." The rewrite
+  also swaps "free cash flow" for "profits," a third, still-different
+  concept the original never even measures here. Every individual digit
+  is copied from somewhere in the original, but reassembled this way the
+  passage asserts something false: that free cash flow was $84.9 billion
+  and stayed positive, when the real free cash flow was $53.3 billion
+  and briefly went negative.

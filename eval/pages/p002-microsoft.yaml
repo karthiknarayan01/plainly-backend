@@ -1,0 +1,132 @@
+id: p002-microsoft
+source_type: earnings_statement
+source: eval/sources/microsoft-q4-fy2026.md
+company: Microsoft
+original_page: '# Microsoft — Q4 FY2026 (quarter ended June 30, 2026)
+
+
+
+  ## Revenue & growth
+
+
+  Revenue was $90.0 billion, up 18% (17% in constant currency), ahead of
+
+  analyst expectations.
+
+
+  ## Profitability
+
+
+  Operating income $40.6 billion (+18%). Net income $35.8 billion (+31%
+
+  GAAP); $35.3 billion (+22% non-GAAP). Diluted EPS $4.81 (+32% GAAP);
+
+  $4.74 (+23% non-GAAP).
+
+
+  ## Full fiscal year
+
+
+  Annual revenue surpassed $331 billion, up 18%. Microsoft Cloud revenue
+
+  exceeded $214 billion, up 27%.
+
+
+  ## Cloud & AI
+
+
+  Azure revenue grew 43% in the quarter, driven by demand and efficiency
+
+  gains, with continued acceleration expected in H1 FY27.
+
+
+  ## Copilot adoption
+
+
+  Microsoft 365 Copilot paid seats surpassed 30 million; net seat adds more
+
+  than doubled quarter-over-quarter; user satisfaction scores doubled over
+
+  the last three quarters.
+
+
+  ## Note on reporting structure
+
+
+  An earlier 2026 8-K disclosed Microsoft''s updated segment structure
+
+  beginning FY2027: two reportable segments, "Agents and Infra" and
+
+  "Devices and Consumer" — worth knowing since segment-level historical
+
+  comparisons may shift under the new structure.'
+chars: 1095
+numbers_that_must_survive:
+- as_written: '30'
+  match: '30'
+- as_written: '2026'
+  match: '2026'
+- as_written: $90.0
+  match: '90.0'
+- as_written: 18%
+  match: '18'
+- as_written: 17%
+  match: '17'
+- as_written: $40.6
+  match: '40.6'
+- as_written: $35.8
+  match: '35.8'
+- as_written: 31%
+  match: '31'
+- as_written: $35.3
+  match: '35.3'
+- as_written: 22%
+  match: '22'
+- as_written: $4.81
+  match: '4.81'
+- as_written: 32%
+  match: '32'
+- as_written: $4.74
+  match: '4.74'
+- as_written: 23%
+  match: '23'
+- as_written: $331
+  match: '331'
+- as_written: $214
+  match: '214'
+- as_written: 27%
+  match: '27'
+- as_written: 43%
+  match: '43'
+- as_written: '365'
+  match: '365'
+jargon_that_must_be_explained:
+- GAAP
+- non-GAAP
+- EPS
+- diluted
+- operating income
+- net income
+- constant currency
+- fiscal year
+- 8-K
+entities_that_must_not_appear:
+- Amazon
+- AWS
+- Google
+- Apple
+- Meta
+- Facebook
+- Netflix
+- Tesla
+- Walmart
+- Coca-Cola
+- IBM
+- Oracle
+- Salesforce
+- Uber
+- Airbnb
+- Twitter
+- OpenAI
+- Anthropic
+- NVIDIA

@@ -1,0 +1,50 @@
+id: "002-tesla-margin-decline"
+source_type: earnings_statement
+source: eval/sources/tesla-q2-2026.md
+
+original_excerpt: >
+  Tesla's automotive gross margin was 16.9%, or 16.3% excluding regulatory
+  credits. This compares to 19.2% in the first quarter of 2026.
+  Automotive gross margin excluding regulatory credits would have been
+  roughly flat quarter-over-quarter if not for a $230 million benefit
+  recognized in the first quarter that did not repeat in the second
+  quarter.
+
+good_rewrite: >
+  For every car Tesla sold this quarter, it kept 16.9 cents of profit
+  out of every dollar, before counting other company-wide costs. Take
+  away a special kind of income — money Tesla gets for selling pollution
+  credits to other car makers, not from selling cars — and that drops to
+  16.3 cents.
+
+  Three months earlier, that same number (excluding the pollution-credit
+  money) was 19.2 cents. That looks like a big drop. But most of it isn't
+  really new — Tesla got a one-time $230 million boost last quarter that
+  didn't happen again this quarter. Take that one-time boost out of the
+  picture, and the real drop is much smaller than it first looks.
+
+good_rewrite_rationale: >
+  Explains "regulatory credits" concretely (selling pollution credits to
+  other automakers) instead of leaving the term unexplained — this is
+  exactly the kind of jargon a 10th grader wouldn't know. Keeps all three
+  numbers (16.9%, 16.3%, 19.2%) and the $230 million figure. Most
+  importantly, it preserves the original's actual point — that the
+  apparent decline is mostly a comparison artifact from a one-time item,
+  not a real deterioration — which is easy to lose if you just restate
+  the percentages without the explanation. This is a case where
+  "explain why, not just what" matters more than usual.
+
+bad_rewrite: >
+  Tesla's profit margin on cars dropped from 19.2% to 16.3% this
+  quarter, a concerning decline for the company.
+
+bad_rewrite_rationale: >
+  Gets the two numbers right but commits a real distortion: calling the
+  drop "concerning" without mentioning the one-time $230 million item
+  reverses the original's actual point. The source explicitly says the
+  real underlying change is small once you account for that one-time
+  benefit — this rewrite implies the opposite, a genuine decline. Also
+  never explains what "regulatory credits" means, and drops the $230
+  million figure and the reason for the apparent drop entirely (loss).
+  This is the kind of error the judge's distortion check exists for —
+  technically-accurate numbers can still add up to a false impression.
