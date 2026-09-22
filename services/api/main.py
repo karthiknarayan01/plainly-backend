@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 import db
+from logging_json import log, request_id_var
 
 app = FastAPI()
 
@@ -50,14 +51,22 @@ def create_rewrite_job(body: CreateJobRequest):
         raise HTTPException(status_code=400, detail="pages must not be empty")
     with db.get_conn() as conn:
         job_id = db.create_job(conn, body.filename, [p.model_dump() for p in body.pages])
+    # This is the one point where a "request" in the user-facing sense
+    # (one uploaded document) begins — job_id is used as the request_id
+    # everywhere downstream (services/worker's logs, Cloud Logging
+    # filtering) rather than minting a second, parallel identifier.
+    request_id_var.set(job_id)
+    log("job_received", filename=body.filename, page_count=len(body.pages))
     return {"job_id": job_id}
 
 
 @app.get("/rewrite-jobs/{job_id}")
 def get_rewrite_job(job_id: str):
+    request_id_var.set(job_id)
     with db.get_conn() as conn:
         snapshot = db.get_job_snapshot(conn, job_id)
     if snapshot is None:
+        log("job_lookup_not_found", severity="WARNING")
         raise HTTPException(status_code=404, detail="job not found")
     return json.loads(_to_json(snapshot))
 
@@ -73,8 +82,10 @@ def get_rewrite_job_progress(job_id: str):
     lost. The client now waits for the whole document and shows progress
     from this endpoint while it waits.
     """
+    request_id_var.set(job_id)
     with db.get_conn() as conn:
         progress = db.get_job_progress(conn, job_id)
     if progress is None:
+        log("job_lookup_not_found", severity="WARNING")
         raise HTTPException(status_code=404, detail="job not found")
     return json.loads(_to_json(progress))

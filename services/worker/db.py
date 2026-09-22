@@ -67,6 +67,14 @@ STALE_CLAIM_MINUTES = 5
 
 
 def claim_next_chunk(conn) -> dict | None:
+    # created_at is returned so the caller can compute real queueing
+    # delay (time this chunk actually waited before a worker picked it
+    # up), not just how long this UPDATE itself took — see main.py's
+    # claim_and_process_loop. For a reclaimed stale chunk (see below),
+    # created_at is its ORIGINAL creation time, so that delay also
+    # includes however long it sat stuck — a different, still-useful
+    # signal (recovery-driven delay), not a bug.
+    #
     # Also reclaims a chunk stuck in 'processing' past STALE_CLAIM_MINUTES
     # — the worker instance that claimed it may have crashed or been
     # replaced mid-attempt (confirmed happening in practice: a chunk
@@ -86,7 +94,7 @@ def claim_next_chunk(conn) -> dict | None:
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
             )
-            RETURNING id, job_id, original_text
+            RETURNING id, job_id, original_text, created_at
             """,
             (STALE_CLAIM_MINUTES,),
         )
@@ -126,7 +134,11 @@ def mark_chunk_failed(conn, chunk_id: str, error: str) -> None:
         conn.commit()
 
 
-def maybe_complete_job(conn, job_id: str) -> None:
+def maybe_complete_job(conn, job_id: str) -> str | None:
+    """Returns the job's new terminal status if this call just set one
+    (so the caller can log a job_completed/job_failed event exactly
+    once), or None if the job isn't finished yet or was already terminal.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "SELECT status FROM rewrite_chunks WHERE job_id = %s",
@@ -134,18 +146,19 @@ def maybe_complete_job(conn, job_id: str) -> None:
         )
         statuses = [row[0] for row in cur.fetchall()]
         if not statuses:
-            return
+            return None
         if all(s == "completed" for s in statuses):
             new_status = "completed"
         elif any(s == "failed" for s in statuses) and all(s in ("completed", "failed") for s in statuses):
             new_status = "failed"
         else:
-            return  # still chunks pending/processing
+            return None  # still chunks pending/processing
         cur.execute(
-            "UPDATE rewrite_jobs SET status = %s, updated_at = now() WHERE id = %s",
+            "UPDATE rewrite_jobs SET status = %s, updated_at = now() WHERE id = %s AND status NOT IN ('completed', 'failed')",
             (new_status, job_id),
         )
         conn.commit()
+        return new_status if cur.rowcount else None
 
 
 def create_job(conn, filename: str, pages: list[dict]) -> str:

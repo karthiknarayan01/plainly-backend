@@ -173,7 +173,7 @@ of contents lists chapters with no page numbers at all — never matched
 it once. Fixed with a second, independent detection signal, confirmed
 against every non-contents page in the set to produce zero false
 positives before shipping. All three are documented, with the
-before/after numbers, in `eval/pages/README.md` and `eval/README.md`.
+before/after numbers, in `eval/tasks/README.md` and `eval/README.md`.
 
 ### Running it
 
@@ -186,18 +186,92 @@ python eval/run_page_eval.py --models deepseek/deepseek-v4.1-flash,qwen/qwen3-23
 ```
 
 Full methodology, every candidate tried, and what was ruled out and why:
-`eval/README.md` and `eval/pages/README.md`.
+`eval/README.md` and `eval/tasks/README.md`.
+
+## Latency
+
+What matters for a reader waiting on a page is time-to-first-token, not
+total completion time — and TTFT isn't one number, it's the sum of
+whatever a page actually has to go through before its first visible
+output: queueing for a free worker, the in-code page-type classifier,
+the rate limiter, and the model call itself. Each is measured
+separately and logged (`services/worker/logging_json.py`), feeding
+per-component Cloud Monitoring metrics (`infra/terraform/metrics.tf`) —
+so a slow page can be traced to a specific cause instead of one opaque
+number.
+
+![Time to first token, by component](eval/observability/ttft_breakdown.png)
+
+First production validation run, right after this instrumentation
+shipped: the model call itself is consistently **sub-20ms** to first
+token — never the bottleneck. What the chart actually caught is a real
+cold-start effect — a fresh worker instance spinning up after a deploy
+adds several seconds of queueing before a page is even claimed; the
+same pipeline against an already-warm worker dropped to ~1.3s. That's
+directly actionable: for this pipeline, latency work should target
+worker warm-up and instance scheduling, not the model or the prompt —
+exactly the kind of attribution a single blended latency number can't
+give you.
+
+### Which inputs actually move latency
+
+The same logs carry token counts per call, so "what makes a page slow"
+is a question with a measured answer rather than an assumption:
+
+![Latency vs. token counts](eval/observability/latency_vs_tokens.png)
+
+Time-to-first-token is a few milliseconds regardless of how big the
+input page is. What total completion time tracks, almost perfectly, is
+**output** length — about **11.7ms per output token** (10.8–12.3 across
+the run, r = +0.99). Input size correlates too (r = +0.88), but that's
+confounded rather than causal here: a longer source page produces a
+longer rewrite, and it's the rewrite that costs the time.
+
+That matters for this product specifically, because the writer prompt
+deliberately makes rewrites *longer* than their source (explaining
+jargon takes more words than using it). Output length is therefore the
+real latency lever — and it's one that trades directly against the
+product's core promise, so it's a deliberate decision to make, not an
+optimization to apply blindly. Full breakdown and how to regenerate
+both charts: `eval/observability/README.md`.
 
 ## Repo structure
 
 ```
 services/api/     FastAPI — job creation, progress, and the finished-document endpoint
 services/worker/  Claims queued pages and makes the rewrite call for each
-prompts/          The writer model's system prompt
-eval/             The evaluation framework described above — pages, harness, results
-infra/terraform/  Cloud SQL, Cloud Run, IAM and secrets, as code
+prompts/writer/   One prompt file per page task, composed with a shared base — see below
+eval/tasks/       The evaluation framework described above — one folder per task, pages + factors
+infra/terraform/  Cloud SQL, Cloud Run, IAM/secrets, and latency metrics, as code
 infra/sql/        Postgres schema
 ```
+
+### One prompt per task, not one prompt for everything
+
+The writer prompt is split by what kind of page it's rewriting —
+`prompts/writer/earnings_statement.md`, `technical_book.md`,
+`contents_page.md` — each composed at call time with
+`prompts/writer/_shared.md`, which carries every rule that applies
+regardless of task (fidelity, the highlight budget, output format).
+Production picks the task with a cheap, in-code heuristic
+(`services/worker/main.py`'s `classify_page_type()`), not a second model
+call, so the page count stays at exactly one OpenRouter round-trip —
+the same constraint that removed the judge/retry loop in the first
+place. `eval/tasks/` mirrors the same three-way split: one directory per
+task, each with its own real pages and its own factor files (what gets
+measured for that task, and how — code-computed where possible, a
+narrow judge question only where it has to be).
+
+### Tracing one request through the pipeline
+
+Every job gets one ID (`job_id`, generated when the API creates it) that
+threads through every log line the pipeline produces for that job — page
+classification, the writer call, the save to Postgres — as structured
+JSON on stdout, which Cloud Run ingests as Cloud Logging entries
+automatically. Filtering logs on that one ID reconstructs a job's full
+processing sequence end to end — every action taken and in what order,
+not just the final result. The same log lines feed the latency
+breakdown above; see "## Latency".
 
 `dev` is the default/live branch; `main` only advances via a dev → main
 promotion PR.

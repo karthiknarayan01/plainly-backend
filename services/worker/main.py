@@ -1,7 +1,10 @@
 # Real worker: claims a pending chunk via SKIP LOCKED, runs ONE writer
 # call against OpenRouter (llm.py), saves the result, and marks the parent
 # job complete once every chunk is done. The generate->judge->retry loop
-# this used to run was removed 2026-09-17 — see llm.py's docstring.
+# this used to run was removed 2026-09-17 — see llm.py's docstring. The
+# one writer call now uses a task-specific prompt, chosen by
+# classify_page_type() below (a heuristic, not a second model call) —
+# still exactly one OpenRouter round-trip per page.
 #
 # The HTTP health server is unrelated to the actual work — it exists only
 # because Cloud Run kills a service that never binds $PORT, which is what
@@ -12,10 +15,12 @@ import os
 import re
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import db
 import llm
+from logging_json import Timer, chunk_id_var, log, request_id_var
 
 POLL_INTERVAL_SECONDS = 2
 # Each chunk's work is almost entirely waiting on OpenRouter (network
@@ -149,61 +154,143 @@ def is_declined(rewrite: str) -> bool:
     return len(text) <= MAX_DECLINE_LENGTH and bool(_DECLINED.search(text))
 
 
-def process_chunk(client, chunk: dict) -> None:
+# Routes a page to one of the two writer task prompts (prompts/writer/
+# earnings_statement.md, technical_book.md — see llm.compose_writer_prompt).
+# Production has no ground-truth document type, and an LLM classification
+# call would add a second round-trip's latency to every single page for a
+# difference that's mostly framing (the rules that actually govern
+# fidelity/formatting live in prompts/writer/_shared.md and apply to both
+# tasks identically) — so this is a cheap heuristic, same philosophy as
+# looks_like_contents() above, not a model call. A true contents page is
+# expected to already be gone by the time this runs (looks_like_contents()
+# is checked first in process_chunk()); this never routes to the
+# "contents_page" task itself, which exists for eval's direct testing of
+# the model's own judgment, not for production routing.
+_FINANCE_SIGNALS = re.compile(
+    r"\$[\d,]+(?:\.\d+)?|"
+    r"\b(?:GAAP|EPS|revenue|earnings|fiscal|quarter(?:ly)?|guidance|"
+    r"gross margin|operating margin|net income|free cash flow|"
+    r"year-over-year|EBITDA|diluted|shareholders?)\b",
+    re.IGNORECASE,
+)
+_BOOK_SIGNALS = re.compile(
+    r"\bfor example\b|\bin other words\b|\bFigure \d|\bListing \d|"
+    r"\bchapter\b|\bin this (?:section|chapter)\b|\bas shown\b|"
+    r"\bconsider the following\b",
+    re.IGNORECASE,
+)
+
+
+def classify_page_type(text: str) -> str:
+    """Picks a writer task: "earnings_statement" or "technical_book"."""
+    finance_hits = len(_FINANCE_SIGNALS.findall(text))
+    book_hits = len(_BOOK_SIGNALS.findall(text))
+    return "earnings_statement" if finance_hits > book_hits else "technical_book"
+
+
+def _log_job_transition(new_status: str | None) -> None:
+    # maybe_complete_job only returns non-None the one time it actually
+    # flips the job to a terminal status (see db.py's own docstring on
+    # the race it closes), so this never double-logs a job's completion
+    # even though every one of its chunks calls it.
+    if new_status == "completed":
+        log("job_completed")
+    elif new_status == "failed":
+        log("job_failed", severity="WARNING")
+
+
+def process_chunk(client, chunk: dict, claim_wait_ms: float = 0.0) -> None:
+    request_id_var.set(str(chunk["job_id"]))
+    chunk_id_var.set(str(chunk["id"]))
     original_text = chunk["original_text"].strip()
-    if len(original_text) < MIN_TEXT_LENGTH:
-        with db.get_conn() as conn:
-            db.save_chunk_result(conn, chunk["id"], "", {}, True, 0)
-            db.maybe_complete_job(conn, chunk["job_id"])
-        print(f"[chunk {chunk['id']}] skipped (no extractable text, {len(original_text)} chars)", flush=True)
-        return
-    if looks_like_contents(original_text):
-        with db.get_conn() as conn:
-            db.save_chunk_result(conn, chunk["id"], "", {}, None, 0)
-            db.maybe_complete_job(conn, chunk["job_id"])
-        print(f"[chunk {chunk['id']}] skipped (contents/index page)", flush=True)
-        return
-    try:
-        # One writer call. No judge, no fact-check, no retry loop — see
-        # llm.py's module docstring for what that trades away and why.
-        rewrite = llm.call_writer(client, chunk["original_text"])
-        if is_declined(rewrite):
-            # The model was asked to reply with nothing for a navigation
-            # page and instead explained itself — "(No output — this page
-            # is a table of contents...)". Observed for real. Shipping
-            # that puts the model's apology in the middle of the book, so
-            # treat it as the empty reply it was meant to be.
-            rewrite = ""
-        with db.get_conn() as conn:
-            # scores/approved stay in the schema but are no longer produced;
-            # nothing grades a rewrite now.
-            db.save_chunk_result(conn, chunk["id"], rewrite, {}, None, 1)
-            db.maybe_complete_job(conn, chunk["job_id"])
-        print(f"[chunk {chunk['id']}] completed ({len(rewrite)} chars)", flush=True)
-    except llm.InsufficientCreditsError as exc:
-        # Stored as a stable code (llm.FAILURE_INSUFFICIENT_CREDITS), not
-        # the raw exception text: services/api/db.py's get_job_progress
-        # looks for this exact string across a job's chunks so the reader
-        # can stop waiting and show a real explanation — "we're out of
-        # credits" — instead of the generic "something went wrong" a raw
-        # error dump would produce, or worse, silence.
-        print(f"[chunk {chunk['id']}] FAILED: insufficient credits ({exc})", flush=True)
-        try:
+
+    with Timer() as page_timer:
+        if len(original_text) < MIN_TEXT_LENGTH:
             with db.get_conn() as conn:
-                db.mark_chunk_failed(conn, chunk["id"], llm.FAILURE_INSUFFICIENT_CREDITS)
-                db.maybe_complete_job(conn, chunk["job_id"])
-        except Exception as inner_exc:
-            print(f"[chunk {chunk['id']}] also failed to record failure: {inner_exc}", flush=True)
-    except Exception as exc:
-        print(f"[chunk {chunk['id']}] FAILED: {exc}", flush=True)
-        try:
+                db.save_chunk_result(conn, chunk["id"], "", {}, True, 0)
+                new_status = db.maybe_complete_job(conn, chunk["job_id"])
+            log("page_skipped", reason="no_extractable_text", chars=len(original_text))
+            _log_job_transition(new_status)
+            return
+        if looks_like_contents(original_text):
             with db.get_conn() as conn:
-                db.mark_chunk_failed(conn, chunk["id"], str(exc))
-                db.maybe_complete_job(conn, chunk["job_id"])
-        except Exception as inner_exc:
-            # DB itself may be the thing that's down — don't let recording
-            # the failure become its own unhandled crash.
-            print(f"[chunk {chunk['id']}] also failed to record failure: {inner_exc}", flush=True)
+                db.save_chunk_result(conn, chunk["id"], "", {}, None, 0)
+                new_status = db.maybe_complete_job(conn, chunk["job_id"])
+            log("page_skipped", reason="contents_page_detected")
+            _log_job_transition(new_status)
+            return
+        try:
+            # One writer call. No judge, no fact-check, no retry loop —
+            # see llm.py's module docstring for what that trades away.
+            #
+            # Every component between this page being claimed and its
+            # first visible token is timed and logged separately — not
+            # just the total — specifically so a slow page can be
+            # attributed to a cause (queueing for a worker? rate-limit
+            # throttling? the model itself?) rather than one opaque
+            # number. classify_ms here, throttle_wait_ms + ttft_ms from
+            # llm.call_writer's WriterTiming, and claim_wait_ms passed in
+            # from claim_and_process_loop together sum to
+            # ttft_since_claim_ms below — the full, real time this page
+            # made a reader wait for its first visible output.
+            with Timer() as classify_timer:
+                task = classify_page_type(original_text)
+            classify_ms = classify_timer.elapsed_ms()
+            log("page_classified", task=task, classify_ms=classify_ms)
+            rewrite, llm_timing = llm.call_writer(client, chunk["original_text"], task)
+            if is_declined(rewrite):
+                # The model was asked to reply with nothing for a
+                # navigation page and instead explained itself — "(No
+                # output — this page is a table of contents...)".
+                # Observed for real. Shipping that puts the model's
+                # apology in the middle of the book, so treat it as the
+                # empty reply it was meant to be.
+                rewrite = ""
+            with db.get_conn() as conn:
+                # scores/approved stay in the schema but are no longer
+                # produced; nothing grades a rewrite now.
+                db.save_chunk_result(conn, chunk["id"], rewrite, {}, None, 1)
+                new_status = db.maybe_complete_job(conn, chunk["job_id"])
+            ttft_since_claim_ms = (
+                claim_wait_ms + classify_ms + llm_timing.throttle_wait_ms
+                + (llm_timing.ttft_ms or 0.0)
+            )
+            log("page_completed", rewrite_chars=len(rewrite), task=task,
+                duration_ms=page_timer.elapsed_ms(),
+                claim_wait_ms=claim_wait_ms, classify_ms=classify_ms,
+                throttle_wait_ms=llm_timing.throttle_wait_ms,
+                model_ttft_ms=llm_timing.ttft_ms,
+                ttft_since_claim_ms=round(ttft_since_claim_ms, 1))
+            _log_job_transition(new_status)
+        except llm.InsufficientCreditsError as exc:
+            # Stored as a stable code (llm.FAILURE_INSUFFICIENT_CREDITS),
+            # not the raw exception text: services/api/db.py's
+            # get_job_progress looks for this exact string across a
+            # job's chunks so the reader can stop waiting and show a
+            # real explanation — "we're out of credits" — instead of the
+            # generic "something went wrong" a raw error dump would
+            # produce, or worse, silence.
+            log("page_failed", severity="WARNING", reason="insufficient_credits",
+                detail=str(exc), duration_ms=page_timer.elapsed_ms())
+            try:
+                with db.get_conn() as conn:
+                    db.mark_chunk_failed(conn, chunk["id"], llm.FAILURE_INSUFFICIENT_CREDITS)
+                    new_status = db.maybe_complete_job(conn, chunk["job_id"])
+                _log_job_transition(new_status)
+            except Exception as inner_exc:
+                log("page_failure_not_recorded", severity="ERROR", detail=str(inner_exc))
+        except Exception as exc:
+            log("page_failed", severity="ERROR", reason="exception",
+                detail=str(exc), duration_ms=page_timer.elapsed_ms())
+            try:
+                with db.get_conn() as conn:
+                    db.mark_chunk_failed(conn, chunk["id"], str(exc))
+                    new_status = db.maybe_complete_job(conn, chunk["job_id"])
+                _log_job_transition(new_status)
+            except Exception as inner_exc:
+                # DB itself may be the thing that's down — don't let
+                # recording the failure become its own unhandled crash.
+                log("page_failure_not_recorded", severity="ERROR", detail=str(inner_exc))
 
 
 def claim_and_process_loop(client, worker_num: int):
@@ -217,19 +304,30 @@ def claim_and_process_loop(client, worker_num: int):
             with db.get_conn() as conn:
                 chunk = db.claim_next_chunk(conn)
         except Exception as exc:
-            print(f"[worker {worker_num}] claim failed, will retry: {exc}", flush=True)
+            log("claim_failed", severity="WARNING", worker_lane=worker_num, detail=str(exc))
             time.sleep(POLL_INTERVAL_SECONDS)
             continue
         if chunk is None:
             time.sleep(POLL_INTERVAL_SECONDS)
             continue
-        print(f"[worker {worker_num}] [chunk {chunk['id']}] claimed", flush=True)
-        process_chunk(client, chunk)
+        request_id_var.set(str(chunk["job_id"]))
+        chunk_id_var.set(str(chunk["id"]))
+        # Real queueing delay: how long this chunk actually sat waiting
+        # (created_at is TIMESTAMPTZ, so this is timezone-aware) before
+        # any of the CONCURRENT_WORKERS lanes picked it up — not how long
+        # the claim query itself took, which is normally a few ms. Under
+        # real load (all lanes busy) this is where a slow page can
+        # actually originate, not the model call at all.
+        claim_wait_ms = round(
+            (datetime.now(timezone.utc) - chunk["created_at"]).total_seconds() * 1000, 1
+        )
+        log("chunk_claimed", worker_lane=worker_num, claim_wait_ms=claim_wait_ms)
+        process_chunk(client, chunk, claim_wait_ms)
 
 
 def main_loop():
     client = llm.make_client()
-    print(f"worker started, {CONCURRENT_WORKERS} concurrent lanes polling for pending chunks", flush=True)
+    log("worker_started", concurrent_lanes=CONCURRENT_WORKERS)
     threads = [
         threading.Thread(target=claim_and_process_loop, args=(client, i), daemon=True)
         for i in range(CONCURRENT_WORKERS)

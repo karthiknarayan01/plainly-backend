@@ -415,9 +415,10 @@ input of **266 characters**; a real page the product processes is
 therefore made on inputs roughly 9x smaller than production input, and
 the ranking it produced did not survive contact with real pages.
 
-The replacement lives in **`eval/pages/`** (see `eval/pages/README.md`
-for the design and its limitations) and is run by
-**`eval/run_page_eval.py`**. Two things changed on purpose:
+The replacement lives in **`eval/tasks/*/pages/`** (see
+`eval/tasks/README.md` for the design and its limitations — reorganized
+2026-09-21 from a flat `eval/pages/` into one directory per writer task)
+and is run by **`eval/run_page_eval.py`**. Two things changed on purpose:
 
 1. **Real full pages.** 10 of them — 5 real earnings releases, 5 real
    pages from a technical book. Median input 2,376 chars.
@@ -582,7 +583,7 @@ work on the first attempt.
   correctly produce nothing, per its own prompt instruction) and
   excluded from every other aggregate — fidelity and expansion don't
   mean anything for a page that's supposed to come back empty. Full
-  rationale in `eval/pages/README.md`.
+  rationale in `eval/tasks/contents_page/factors/correctness.md`.
 - **New axis: formatting.** `eval/run_page_eval.py` now checks stray
   markdown (`## heading`, `- bullet`, unclosed `**`) and highlight count,
   using the *exact same patterns* the real pipeline uses
@@ -713,6 +714,96 @@ instead of the original 10 — the ranking held on the smaller set, but it
 hasn't been checked against the harder cases this expansion added
 (the real-named-customer page, the no-page-number contents pages, the
 tariff one-time-effect page).
+
+## 2026-09-21: writer split into one prompt per task, eval reorganized to match, request tracing + latency metrics added
+
+Three changes, done together because the second two depend on the
+first: (1) the single writer prompt was split into
+`prompts/writer/_shared.md` (every rule that applies regardless of page
+type, moved verbatim — nothing rewritten) plus one thin task file per
+page type (`earnings_statement.md`, `technical_book.md`,
+`contents_page.md`), composed at call time and routed to by a new
+in-code heuristic (`classify_page_type()` in `services/worker/main.py`
+— not a second model call, to avoid adding a round-trip's latency to
+every page for a difference that's framing, not substance); (2)
+`eval/pages/` was reorganized into `eval/tasks/<task>/{pages,factors}/`
+to mirror that split exactly, and the two judge questions that were
+previously inline Python strings in `eval/run_page_eval.py` became real
+files under each task's `factors/`; (3) request-scoped structured JSON
+logging (`services/*/logging_json.py`, new — `job_id` reused as the
+request ID rather than minting a second one) and writer-call streaming
+with time-to-first-token measurement were added, feeding new Cloud
+Monitoring log-based metrics (`infra/terraform/metrics.tf`, written and
+`terraform validate`-clean, not yet applied to live infra as of this
+writing).
+
+### The regression check this needed, and the actual numbers
+
+None of this was allowed to change what the writer produces — it's an
+organizational and observability change, not a quality change — so
+before the reorg, the same 25-page set was run twice with
+`deepseek/deepseek-v4.1-flash` (free), same pages, same everything
+except which prompt file(s) were used: once with `--writer-prompt
+prompts/writing_model_system_prompt.md` (the old, single monolithic
+file, forced via the harness's existing A/B override) as the baseline,
+and once with the new split-prompt-plus-classifier pipeline as it would
+actually run in production.
+
+| | old (monolithic) | new (split + classifier) |
+|---|---|---|
+| number recall | 98.2% | 98.2% |
+| fabrications | 0 | 0 |
+| expansion | 1.62 | 1.47 |
+| pages that shrank | 2 | 4 |
+| preamble leaks | 0 | 0 |
+| truncations | 0 | 0 |
+| stray markdown | 1 | 1 |
+| highlight out-of-range | 5 | **2** |
+| jargon explained | 62.75% | **72.55%** |
+| teaching | 6.86 | **7.14** |
+| contents pages correct | 3/4 | **4/4** |
+
+Identical on the axes that matter most (recall, fabrication, leaks,
+truncation, stray markdown) and measurably *better* on three others
+(highlight discipline, jargon coverage, contents-page handling) —
+running the same real pages through two task-specific prompts instead
+of one instruction set trying to cover every case at once appears to
+help, not just reorganize. The one metric that moved the other
+direction — "pages that shrank," 2 vs. 4 — is a small absolute count
+(both well under 25% of the non-contents pages) and both runs' mean
+expansion stayed comfortably above 1.0; given this project's own
+documented single-run variance (94/58/69% swings on one page across
+three runs, elsewhere in this file), a 2-page difference on one run
+each isn't treated as a real finding without a replicate, and none was
+run — flagged honestly rather than either dismissed or over-claimed.
+
+This was a single run per arm, at zero API cost (the harness's own
+`--writer-prompt` override made the direct comparison possible without
+touching production code), so — consistent with this project's own
+standard for what a single run can and can't support — treat the exact
+percentages as directional, not final, the same caveat as everywhere
+else numbers from one run appear in this document.
+
+### Classifier accuracy, measured directly against this same set
+
+`classify_page_type()`'s job is only to pick `earnings_statement` vs.
+`technical_book` (contents pages are gated out earlier, before
+classification runs, by the existing `looks_like_contents()`). Checked
+against all 21 non-contents pages' true, hand-verified `source_type`:
+**19/21 correct (90%)**, zero cost (pure regex, no API call). Both
+misses were the same book — a finance-education text whose pages are
+genuinely dense with financial vocabulary (GAAP, margins, income
+statements) despite being technical_book, not earnings_statement — an
+understandable confusion given what the heuristic actually looks at.
+Not patched further: the rules that actually govern fidelity and
+fabrication live in `prompts/writer/_shared.md` and apply identically
+regardless of which of the two task files gets composed with it, so
+this is a bounded-impact miss (wrong framing, not wrong rules), and the
+regression check above already measured the real, combined effect of
+prompt-split-plus-classifier-as-it-actually-runs and found no
+regression — tuning the heuristic further without a specific quality
+problem it's causing would be optimizing a number that isn't
+demonstrably costing anything.
 
 ## 2026-09-17 (earlier): open-source-only requirement dropped, but the closed-model swap didn't pan out
 

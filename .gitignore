@@ -23,10 +23,11 @@ tfplan
 eval/results/
 
 # Page-scale eval examples derived from copyrighted technical books — the
-# earnings-statement pages ARE committed (public disclosures), these are not.
-# Regenerate locally: point the PLAINLY_*_PDF env vars in
-# eval/build_page_set.py at local copies, then run it.
-eval/pages/*-scalability-*.yaml
-eval/pages/*-ai-engineering-*.yaml
-eval/pages/*-inference-engineering-*.yaml
-eval/pages/*-financial-statements-*.yaml
+# earnings_statement task's pages ARE committed (public disclosures);
+# technical_book and contents_page pages are entirely book-derived, so
+# neither directory has anything committable in it at all. Regenerate
+# locally: point the PLAINLY_*_PDF env vars in eval/build_page_set.py at
+# local copies, then run it. (Reorganized 2026-09-21 from a flat
+# eval/pages/ into eval/tasks/<task>/pages/ — see eval/tasks/README.md.)
+eval/tasks/technical_book/pages/*.yaml
+eval/tasks/contents_page/pages/*.yaml

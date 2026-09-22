@@ -73,7 +73,7 @@ import yaml
 from openai import OpenAI
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PAGES_DIR = SCRIPT_DIR / "pages"
+TASKS_DIR = SCRIPT_DIR / "tasks"
 RESULTS_DIR = SCRIPT_DIR / "results"
 PROMPTS_DIR = SCRIPT_DIR.parent / "prompts"
 
@@ -125,9 +125,19 @@ MAX_HEALTHY_HIGHLIGHTS = 5
 
 
 def load_pages(limit: int | None) -> list[dict]:
-    pages = [yaml.safe_load(p.read_text()) for p in sorted(PAGES_DIR.glob("*.yaml"))]
+    """Reads every page under eval/tasks/<task>/pages/*.yaml.
+
+    One directory per writer task (earnings_statement, technical_book,
+    contents_page) rather than a flat eval/pages/ — each page's own
+    source_type field always matches the directory it's read from, and
+    that's what write_page() uses to pick the matching writer prompt.
+    """
+    pages = sorted(
+        (yaml.safe_load(p.read_text()) for p in TASKS_DIR.glob("*/pages/*.yaml")),
+        key=lambda p: p["id"],
+    )
     if not pages:
-        raise SystemExit(f"no eval pages found in {PAGES_DIR}")
+        raise SystemExit(f"no eval pages found under {TASKS_DIR}/*/pages/")
     return pages[:limit] if limit else pages
 
 
@@ -146,12 +156,27 @@ def load_prompt(path: Path) -> str:
     return (text[i + len(marker):] if i != -1 else text).strip()
 
 
-def write_page(client: OpenAI, model: str, page_text: str,
+WRITER_PROMPTS_DIR = PROMPTS_DIR / "writer"
+
+
+def compose_writer_prompt(task: str) -> str:
+    """Mirrors services/worker/llm.py's compose_writer_prompt exactly, so
+    this harness tests the same prompt production actually sends — the
+    two aren't imported from one place because the services deliberately
+    don't share code (see services/*/db.py's module docstrings); this is
+    the same duplication, same reasoning, applied to eval."""
+    shared = load_prompt(WRITER_PROMPTS_DIR / "_shared.md")
+    specific = load_prompt(WRITER_PROMPTS_DIR / f"{task}.md")
+    return f"{shared}\n\n{specific}"
+
+
+def write_page(client: OpenAI, model: str, page_text: str, task: str,
                prompt_path: Path | None = None) -> tuple[str, str]:
     """Returns (rewrite, finish_reason). Uses the real production prompt
+    (composed shared + task-specific, matching page["source_type"])
     unless a variant is passed, so a prompt change can be A/B'd against
     the deployed one on identical pages with identical scoring."""
-    system = load_prompt(prompt_path or (PROMPTS_DIR / "writing_model_system_prompt.md"))
+    system = load_prompt(prompt_path) if prompt_path else compose_writer_prompt(task)
     user = (
         "Below is a page from a document. Treat it as the full document and the "
         "full page range to rewrite this turn — it's a single, self-contained "
@@ -221,20 +246,17 @@ def is_declined(rewrite: str) -> bool:
 
 
 def judge_teaching(client: OpenAI, judge_model: str, page: dict, rewrite: str) -> dict:
-    """Narrow questions only: which listed terms got explained, and a teaching score."""
+    """Narrow questions only: which listed terms got explained, and a teaching score.
+
+    The judge's instructions live in eval/tasks/<task>/factors/
+    understandability.md, not inline here — same "prompts belong in
+    files" principle already applied to the writer prompt. contents_page
+    has no understandability factor (nothing on that task is meant to
+    build understanding, since correct output is empty), so this is only
+    ever called for earnings_statement/technical_book pages.
+    """
     terms = page.get("jargon_that_must_be_explained") or []
-    system = (
-        "You check whether a plain-language rewrite actually explains specific "
-        "terms to a reader with no background. Reply with JSON only: "
-        '{"explained": ["term", ...], "not_explained": ["term", ...], '
-        '"teaching": 0-10, "note": "one sentence"}. '
-        "A term counts as explained only if the rewrite makes its meaning clear "
-        "in ordinary words (a definition, an analogy, or a worked example) — "
-        "using the term, or swapping it for a different technical word, does not "
-        "count. `teaching` is how well the passage builds understanding for a "
-        "beginner: 10 = every hard idea got a concrete bridge, 0 = bare "
-        "restatement in simpler words."
-    )
+    system = load_prompt(TASKS_DIR / page["source_type"] / "factors" / "understandability.md")
     user = (
         f"Terms to check: {json.dumps(terms)}\n\n"
         f"Original page:\n---\n{page['original_page'][:6000]}\n---\n\n"
@@ -273,7 +295,8 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
             print(f"  ABANDONED after {failures} failures — not a viable writer", flush=True)
             break
         try:
-            rewrite, finish = write_page(client, model, page["original_page"], prompt_path)
+            rewrite, finish = write_page(client, model, page["original_page"],
+                                         page["source_type"], prompt_path)
         except Exception as exc:
             failures += 1
             print(f"  [{page['id']}] FAILED: {type(exc).__name__}: {str(exc)[:110]}", flush=True)
@@ -401,7 +424,7 @@ def main() -> None:
         out.write_text(json.dumps({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "judge_model": args.judge_model, "page_count": len(pages),
-            "writer_prompt": args.writer_prompt or "prompts/writing_model_system_prompt.md",
+            "writer_prompt": args.writer_prompt or "prompts/writer/_shared.md + prompts/writer/<task>.md",
             "results": results,
         }, indent=2))
         s = results[-1]["summary"]

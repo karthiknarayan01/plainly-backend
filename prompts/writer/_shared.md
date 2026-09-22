@@ -1,28 +1,35 @@
-# Writing model — system prompt (draft v3)
+# Writer — shared rules (composed with one task file per call)
 
-> Status: LEGACY as of 2026-09-21 — kept only because eval/run_eval.py
-> (the older, excerpt-based harness, already superseded by
-> eval/run_page_eval.py + eval/tasks/) still loads it by this exact path.
-> Production (services/worker/llm.py) and the live harness
-> (eval/run_page_eval.py) no longer read this file — they compose
-> prompts/writer/_shared.md with a task file in prompts/writer/. The
-> content below is frozen at the point of that split; edit
-> prompts/writer/_shared.md instead for anything that should reach
-> production. See prompts/writer/_shared.md's own header for the full
-> history that moved with it.
-
-> Status: draft, awaiting review. Style section below is now based on the
-> reference PDF (Chetan Bhagat's *Five Point Someone*) — described in my
-> own words, not quoted from it. It's a commercially published, copyrighted
-> novel (not public domain), so I didn't copy passages into this file or
-> the repo — style itself isn't copyrightable, the actual sentences are.
-> Removed an earlier empty placeholder for a worked example: confirmed via
-> a real worker test that the model was reading the placeholder's
-> illustrative "Why this works:" heading as a literal instruction and
-> appending that section to its own output — an HTML comment doesn't stop
-> a model from reading and imitating the text inside it.
+> Status: this file is the body of what used to be the single
+> `writing_model_system_prompt.md` — moved here unchanged, word for word,
+> on 2026-09-21 when the writer was split into three task-specific
+> prompts (`earnings_statement.md`, `technical_book.md`,
+> `contents_page.md`, all in this directory). Nothing below was rewritten
+> in the split; every rule here was already validated (twice bug-fixed
+> this project) as a single file, and forking it into three fully
+> independent copies would mean any future fix has to be applied three
+> times and can silently drift — so it stays one file, composed with a
+> short task-specific addendum at call time
+> (`services/worker/llm.py`'s `compose_writer_prompt()`). See each task
+> file for what's actually new in this split. Full prior history (the
+> TOC/glossary contradiction, the highlight-budget rewrite, the
+> preamble-leak fix) is preserved verbatim below since none of it moved.
 >
-> The "## Example" section now has a real one, added after a direct
+> Original history, unchanged from before the split:
+>
+> Style section is based on the reference PDF (Chetan Bhagat's *Five
+> Point Someone*) — described in my own words, not quoted from it. It's a
+> commercially published, copyrighted novel (not public domain), so no
+> passages were copied into this file or the repo — style itself isn't
+> copyrightable, the actual sentences are.
+> An earlier empty placeholder for a worked example was removed:
+> confirmed via a real worker test that the model was reading the
+> placeholder's illustrative "Why this works:" heading as a literal
+> instruction and appending that section to its own output — an HTML
+> comment doesn't stop a model from reading and imitating the text inside
+> it.
+>
+> The "## Example" section has a real one, added after a direct
 > comparison surfaced a genuine gap: the production writer (correctly
 > scoring perfect "style" under the old rubric) still read as noticeably
 > flatter than a real commissioned rewrite the user had done separately —
