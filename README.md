@@ -211,8 +211,29 @@ same pipeline against an already-warm worker dropped to ~1.3s. That's
 directly actionable: for this pipeline, latency work should target
 worker warm-up and instance scheduling, not the model or the prompt —
 exactly the kind of attribution a single blended latency number can't
-give you. Full component breakdown and how to reproduce it:
-`eval/observability/README.md`.
+give you.
+
+### Which inputs actually move latency
+
+The same logs carry token counts per call, so "what makes a page slow"
+is a question with a measured answer rather than an assumption:
+
+![Latency vs. token counts](eval/observability/latency_vs_tokens.png)
+
+Time-to-first-token is a few milliseconds regardless of how big the
+input page is. What total completion time tracks, almost perfectly, is
+**output** length — about **11.7ms per output token** (10.8–12.3 across
+the run, r = +0.99). Input size correlates too (r = +0.88), but that's
+confounded rather than causal here: a longer source page produces a
+longer rewrite, and it's the rewrite that costs the time.
+
+That matters for this product specifically, because the writer prompt
+deliberately makes rewrites *longer* than their source (explaining
+jargon takes more words than using it). Output length is therefore the
+real latency lever — and it's one that trades directly against the
+product's core promise, so it's a deliberate decision to make, not an
+optimization to apply blindly. Full breakdown and how to regenerate
+both charts: `eval/observability/README.md`.
 
 ## Repo structure
 

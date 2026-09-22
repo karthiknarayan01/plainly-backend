@@ -5,7 +5,7 @@ substitutes for the other:
 
 | | `infra/terraform/metrics.tf` | `analyze_latency.py` (this dir) |
 |---|---|---|
-| Question answered | "What is p95/p99 latency right now?" | "Does a bigger input cost more time?" |
+| Question answered | "What is p95/p99 latency right now?" | "Which input actually drives latency, and by how much?" |
 | Data source | Live Cloud Monitoring, continuously | A batch of exported log lines, once |
 | Where it runs | Cloud Run + Cloud Monitoring, always on | Your machine, on demand |
 | What it produces | A dashboard, queryable anytime | One PNG, from whatever you exported |
@@ -64,13 +64,25 @@ schedule; if you want a current one, query
 
 ## The offline analysis script (this directory)
 
-`analyze_latency.py` answers a narrower, one-off question: does writer
-latency actually track input size, and by how much. It is not wired
-into any pipeline, doesn't run on a schedule, and isn't a second copy of
-the dashboard above — it reads a batch of real `llm_call_end` log lines
+`analyze_latency.py` answers a narrower, one-off question: which input
+actually drives writer latency, and by how much. It is not wired into
+any pipeline, doesn't run on a schedule, and isn't a second copy of the
+dashboard above — it reads a batch of real `llm_call_end` log lines
 (exported once via `gcloud logging read`, reshaped by
-`format_gcloud_logs.py`) and plots `input_tokens` against `ttft_ms` and
-`total_ms`.
+`format_gcloud_logs.py`) and plots input and output token counts
+against `ttft_ms` and `total_ms`, printing the correlations and the
+per-output-token rate.
+
+**What it found on real traffic** (`latency_vs_tokens.png`, the chart in
+the top-level README): the script was originally written around the
+assumption that *input* size drives latency. It doesn't. TTFT is a few
+milliseconds across the whole input range measured, and total
+completion time tracks **output** tokens at ~11.7ms each (10.8–12.3,
+r = +0.99). Input size does correlate (r = +0.88), but confounded:
+longer source page → longer rewrite → more output tokens → more time.
+The script now plots all three relationships side by side precisely so
+that confound is visible rather than hidden behind a single scatter
+plot, which is what the first version would have shown.
 
 ```bash
 gcloud logging read \
