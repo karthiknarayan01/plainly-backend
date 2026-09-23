@@ -66,6 +66,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -87,6 +88,74 @@ MAX_OUTPUT_TOKENS = 4000  # generous: a real page rewrite should expand
 # after spending real money. Fail fast, record the failure, move on.
 REQUEST_TIMEOUT_SECONDS = 75
 MAX_RETRIES = 2
+
+# Failure handling, mirroring what services/worker/llm.py already does in
+# production — this harness never had it, and the gap showed: an empty
+# OpenRouter balance mid-run surfaced as three generic failures and the
+# message "not a viable writer", which blames the model for the account
+# being out of money. Worse, a judge-side failure propagated straight out
+# of evaluate() and killed the whole run, discarding every page already
+# scored (and paid for) for that model.
+#
+# Three classes of failure, three different responses:
+#   402  the account is out of credits. Every remaining call fails the
+#        same way, so retrying is pure waste — abort the run, say so
+#        plainly, and keep whatever was already scored.
+#   429/5xx/timeouts  transient. Worth a couple of bounded retries.
+#   anything else  this page's problem. Record it, move to the next page.
+RETRY_ATTEMPTS = 2
+RETRY_BACKOFF_SECONDS = (2.0, 5.0)
+
+
+class EvalAborted(RuntimeError):
+    """Run-wide, unrecoverable — no point continuing to spend on calls."""
+
+
+def _is_insufficient_credits(exc: Exception) -> bool:
+    # status_code is set from the real HTTP response for every
+    # APIStatusError, 402 included even though the SDK gives it no named
+    # subclass. Reading it is exact; matching provider message text is not.
+    if getattr(exc, "status_code", None) == 402:
+        return True
+    text = str(exc).lower()
+    return "402" in text and "credit" in text
+
+
+def _is_retryable(exc: Exception) -> bool:
+    code = getattr(exc, "status_code", None)
+    if code == 429 or (isinstance(code, int) and 500 <= code < 600):
+        return True
+    text = str(exc).lower()
+    return any(s in text for s in ("429", "rate limit", "timeout", "timed out",
+                                   "connection", "temporarily unavailable"))
+
+
+def _call_with_retry(label: str, fn):
+    """Runs fn(), retrying only what's worth retrying.
+
+    Bounded deliberately: a page rewrite that works takes 10-25s, so a
+    long retry ladder costs more wall-clock time than the page is worth
+    and risks the stalled-provider case this harness already learned to
+    fail fast on.
+    """
+    for attempt in range(RETRY_ATTEMPTS + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            if _is_insufficient_credits(exc):
+                raise EvalAborted(
+                    "OpenRouter reports insufficient credits. Every remaining "
+                    "call would fail identically, so the run stopped here "
+                    "rather than burning through the rest of the set. "
+                    "Add funds and re-run to finish."
+                ) from exc
+            if not _is_retryable(exc) or attempt == RETRY_ATTEMPTS:
+                raise
+            wait = RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)]
+            print(f"    {label}: {type(exc).__name__}, retrying in {wait:.0f}s "
+                  f"({attempt + 1}/{RETRY_ATTEMPTS})", flush=True)
+            time.sleep(wait)
+    raise RuntimeError("unreachable")
 
 LEAK_RE = re.compile(
     r"^\s*(let me\b|okay,? (?:let|so)\b|first,? i\b|i'?ll\b|here'?s (?:the|my)\b|"
@@ -185,15 +254,24 @@ def write_page(client: OpenAI, model: str, page_text: str, task: str,
         "Produce your rewrite of this passage now."
     )
     msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    try:
-        r = client.chat.completions.create(model=model, messages=msgs, temperature=0.3,
-                                           max_tokens=MAX_OUTPUT_TOKENS,
-                                           extra_body={"reasoning": {"enabled": False}})
-    except Exception as exc:
-        if "reasoning" not in str(exc).lower():
-            raise
-        r = client.chat.completions.create(model=model, messages=msgs, temperature=0.3,
-                                           max_tokens=MAX_OUTPUT_TOKENS)
+
+    def attempt():
+        try:
+            return client.chat.completions.create(
+                model=model, messages=msgs, temperature=0.3,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                extra_body={"reasoning": {"enabled": False}})
+        except Exception as exc:
+            # Some models reject the reasoning param outright rather than
+            # ignoring it. That's not retryable and not a real failure —
+            # it just means this model needs the call without it.
+            if "reasoning" not in str(exc).lower():
+                raise
+            return client.chat.completions.create(
+                model=model, messages=msgs, temperature=0.3,
+                max_tokens=MAX_OUTPUT_TOKENS)
+
+    r = _call_with_retry("writer", attempt)
     choice = r.choices[0]
     return (choice.message.content or ""), (choice.finish_reason or "")
 
@@ -263,13 +341,24 @@ def judge_teaching(client: OpenAI, judge_model: str, page: dict, rewrite: str) -
         f"Rewrite:\n---\n{rewrite[:6000]}\n---"
     )
     msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    try:
-        r = client.chat.completions.create(model=judge_model, messages=msgs, temperature=0.0,
-                                           max_tokens=1500, response_format={"type": "json_object"},
-                                           extra_body={"reasoning": {"enabled": False}})
-    except Exception:
-        r = client.chat.completions.create(model=judge_model, messages=msgs,
-                                           temperature=0.0, max_tokens=1500)
+
+    def attempt():
+        try:
+            return client.chat.completions.create(
+                model=judge_model, messages=msgs, temperature=0.0,
+                max_tokens=1500, response_format={"type": "json_object"},
+                extra_body={"reasoning": {"enabled": False}})
+        except Exception as exc:
+            # Not every judge model supports response_format or the
+            # reasoning param. Retry plainly — but only for that reason,
+            # so a 402 or a timeout isn't silently turned into a second
+            # identical call that fails the same way.
+            if _is_insufficient_credits(exc) or _is_retryable(exc):
+                raise
+            return client.chat.completions.create(
+                model=judge_model, messages=msgs, temperature=0.0, max_tokens=1500)
+
+    r = _call_with_retry("judge", attempt)
     raw = r.choices[0].message.content or ""
     try:
         return json.loads(raw)
@@ -284,8 +373,9 @@ def judge_teaching(client: OpenAI, judge_model: str, page: dict, rewrite: str) -
 
 
 def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
-             prompt_path: Path | None = None) -> dict:
+             prompt_path: Path | None = None, on_progress=None) -> dict:
     per_page, failures = [], 0
+    aborted = None
     for page in pages:
         # Bail out of a model that is clearly not viable rather than paying to
         # confirm it ten times. z-ai/glm-5.3-flash returned empty responses and
@@ -297,10 +387,18 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
         try:
             rewrite, finish = write_page(client, model, page["original_page"],
                                          page["source_type"], prompt_path)
+        except EvalAborted as exc:
+            # Out of credits. Not this page's fault and not this model's —
+            # stop the run rather than mislabelling either.
+            aborted = str(exc)
+            print(f"\n  ABORTED: {aborted}", flush=True)
+            break
         except Exception as exc:
             failures += 1
             print(f"  [{page['id']}] FAILED: {type(exc).__name__}: {str(exc)[:110]}", flush=True)
             per_page.append({"id": page["id"], "error": f"{type(exc).__name__}: {str(exc)[:300]}"})
+            if on_progress:
+                on_progress(per_page)
             continue
 
         # A contents/index page is scored on a completely different axis:
@@ -333,9 +431,29 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
         expansion = len(rewrite) / max(len(page["original_page"]), 1)
         leak = bool(LEAK_RE.match(rewrite))
         fmt = score_formatting(rewrite)
-        jt = judge_teaching(client, judge_model, page, rewrite)
+        # The judge is the one call here that costs money *after* the page
+        # has already been written and scored on everything code can
+        # check. Letting it throw would discard all of that, and every
+        # page before it, for a dimension that is only one of four. So a
+        # judge failure degrades this page's teaching score instead of
+        # ending the run — except for an empty balance, which ends it.
+        try:
+            jt = judge_teaching(client, judge_model, page, rewrite)
+        except EvalAborted as exc:
+            aborted = str(exc)
+            print(f"\n  ABORTED (judge): {aborted}", flush=True)
+            break
+        except Exception as exc:
+            jt = {"explained": [], "not_explained": page.get("jargon_that_must_be_explained") or [],
+                  "teaching": None,
+                  "note": f"judge unavailable: {type(exc).__name__}: {str(exc)[:120]}"}
+            print(f"  [{page['id']:<22}] judge failed, page still scored on "
+                  f"fidelity/formatting: {type(exc).__name__}", flush=True)
         terms = page.get("jargon_that_must_be_explained") or []
         explained = [t for t in (jt.get("explained") or []) if t in terms]
+        # A page the judge never saw is not a page that scored zero on
+        # teaching, and must not be averaged in as though it were.
+        judge_ok = jt.get("teaching") is not None
 
         row = {
             "id": page["id"], "source_type": page["source_type"],
@@ -344,11 +462,14 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
             "fabrications": fabs, "expansion": round(expansion, 2),
             "preamble_leak": leak, "truncated": finish == "length",
             **fmt,
+            "judge_ok": judge_ok,
             "jargon_explained": len(explained), "jargon_total": len(terms),
-            "teaching": jt.get("teaching", 0), "note": jt.get("note", ""),
+            "teaching": jt.get("teaching"), "note": jt.get("note", ""),
             "rewrite_chars": len(rewrite), "rewrite": rewrite,
         }
         per_page.append(row)
+        if on_progress:
+            on_progress(per_page)
         rc = "n/a" if row["number_recall"] is None else f"{row['number_recall']*100:.0f}%"
         fmt_flags = "".join([
             "H" if fmt["has_heading"] else "",
@@ -370,9 +491,16 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
     # all 36 on the NVIDIA page.
     hits_all = sum(r["numbers_hit"] for r in ok)
     total_all = sum(r["numbers_total"] for r in ok)
+    # Judged rows only, for the two judged metrics. A page the judge
+    # couldn't score still counts for fidelity and formatting (both
+    # computed in code, both already done by that point) — it just can't
+    # contribute a teaching number it never got.
+    judged = [r for r in ok if r.get("judge_ok")]
     summary = {
         "model": model,
         "pages_ok": len(ok), "pages_failed": failures,
+        "pages_judged": len(judged), "judge_failures": len(ok) - len(judged),
+        "aborted": aborted,
         "number_recall": round(hits_all / total_all, 4) if total_all else None,
         "numbers_hit": hits_all, "numbers_total": total_all,
         "number_recall_macro": round(sum(recalls) / len(recalls), 4) if recalls else None,
@@ -384,10 +512,13 @@ def evaluate(client: OpenAI, model: str, pages: list[dict], judge_model: str,
         "stray_markdown": sum(1 for r in ok if r["has_heading"] or r["has_bullets"] or r["unclosed_bold"]),
         "highlight_out_of_range": sum(1 for r in ok if r["highlight_out_of_range"]),
         "jargon_explained_rate": (
-            round(sum(r["jargon_explained"] for r in ok) / max(sum(r["jargon_total"] for r in ok), 1), 4)
-            if ok else None
+            round(sum(r["jargon_explained"] for r in judged)
+                  / max(sum(r["jargon_total"] for r in judged), 1), 4)
+            if judged else None
         ),
-        "teaching_mean": round(sum(r["teaching"] for r in ok) / len(ok), 2) if ok else None,
+        "teaching_mean": (
+            round(sum(r["teaching"] for r in judged) / len(judged), 2) if judged else None
+        ),
         "contents_pages_correct": sum(1 for r in contents_rows if r["contents_correct"]),
         "contents_pages_total": len(contents_rows),
     }
@@ -414,20 +545,39 @@ def main() -> None:
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-page-eval.json")
 
     results = []
-    for model in [m.strip() for m in args.models.split(",") if m.strip()]:
-        print(f"=== {model}")
-        results.append(evaluate(client, model, pages, args.judge_model,
-                                Path(args.writer_prompt) if args.writer_prompt else None))
-        # Written after every model, not once at the end: an earlier run was
-        # killed mid-flight after a hung model and lost every result it had
-        # already paid for.
+    partial: dict = {}
+
+    def write_report():
+        # Written after every page, not just every model. The
+        # model-level version of this existed because a run killed
+        # mid-flight lost everything it had already paid for; the same
+        # is true within a model, where each page is a real API call
+        # that has already cost money by the time it's scored.
         out.write_text(json.dumps({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "judge_model": args.judge_model, "page_count": len(pages),
             "writer_prompt": args.writer_prompt or "prompts/writer/_shared.md + prompts/writer/<task>.md",
-            "results": results,
+            "results": results + ([partial["result"]] if partial.get("result") else []),
         }, indent=2))
-        s = results[-1]["summary"]
+
+    aborted = None
+    for model in [m.strip() for m in args.models.split(",") if m.strip()]:
+        print(f"=== {model}")
+
+        def save_partial(rows, _model=model):
+            partial["result"] = {
+                "summary": {"model": _model, "in_progress": True, "pages_done": len(rows)},
+                "pages": rows,
+            }
+            write_report()
+
+        result = evaluate(client, model, pages, args.judge_model,
+                          Path(args.writer_prompt) if args.writer_prompt else None,
+                          on_progress=save_partial)
+        results.append(result)
+        partial.pop("result", None)
+        write_report()
+        s = result["summary"]
         rc = "n/a" if s["number_recall"] is None else f"{s['number_recall']*100:.1f}%"
         print(f"  -> recall={rc} fabrications={s['fabrications_total']} "
               f"expansion={s['expansion_mean']} shrank={s['pages_that_shrank']} "
@@ -435,7 +585,14 @@ def main() -> None:
               f"stray_markdown={s['stray_markdown']} highlight_oor={s['highlight_out_of_range']} "
               f"jargon={s['jargon_explained_rate']} teach={s['teaching_mean']} "
               f"contents={s['contents_pages_correct']}/{s['contents_pages_total']} "
-              f"failed={s['pages_failed']}\n", flush=True)
+              f"failed={s['pages_failed']}"
+              + (f" judge_failures={s['judge_failures']}" if s["judge_failures"] else "")
+              + "\n", flush=True)
+        if s["aborted"]:
+            # Credits are gone, so every remaining model would fail the
+            # same way on its first page. Stop, keep what's scored.
+            aborted = s["aborted"]
+            break
 
     # Rank: fidelity first (the product's promise), then no fabrication, then teaching.
     def key(r):
@@ -456,6 +613,16 @@ def main() -> None:
               f"{toc:>7}{s['pages_failed']:>6}")
 
     print(f"\nreport: {out}")
+
+    if aborted:
+        # Loud, last, and on stderr: a partial run whose numbers look
+        # plausible is more dangerous than one that obviously failed,
+        # because the table above is real but covers fewer pages than
+        # asked for. Non-zero exit so a script calling this notices.
+        print(f"\n!! RUN INCOMPLETE — {aborted}", file=sys.stderr, flush=True)
+        print("   The results above are real but cover only the pages "
+              "scored before the run stopped.", file=sys.stderr, flush=True)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

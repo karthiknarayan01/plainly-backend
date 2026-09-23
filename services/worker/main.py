@@ -246,6 +246,18 @@ def process_chunk(client, chunk: dict, claim_wait_ms: float = 0.0) -> None:
                 # apology in the middle of the book, so treat it as the
                 # empty reply it was meant to be.
                 rewrite = ""
+            if not rewrite.strip():
+                # Empty is a legitimate output: it's exactly what a
+                # contents page this detector missed is supposed to
+                # produce, per the writer's own prompt. But it's also
+                # what a page looks like when the model simply returned
+                # nothing, and the two are indistinguishable from here.
+                # Logged as a warning rather than failed, so a run of
+                # these is visible instead of silently shipping blank
+                # pages to a reader — a blank page in the middle of a
+                # book is the symptom to go looking for.
+                log("page_empty_output", severity="WARNING", task=task,
+                    source_chars=len(original_text))
             with db.get_conn() as conn:
                 # scores/approved stay in the schema but are no longer
                 # produced; nothing grades a rewrite now.

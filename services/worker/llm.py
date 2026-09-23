@@ -327,11 +327,30 @@ def call_writer(client: OpenAI, original_text: str, task: str) -> tuple[str, Wri
             if getattr(exc, "status_code", None) == 402:
                 _mark_credits_exhausted()
                 raise InsufficientCreditsError(str(exc)) from exc
+
             is_rate_limited = "429" in str(exc) or "rate limit" in str(exc).lower()
-            if not is_rate_limited or attempt == RATE_LIMIT_RETRIES:
+            # Streaming reopened a retry gap that the non-streaming call
+            # didn't have: the SDK's own max_retries only covers
+            # establishing the request, so once the stream is open a
+            # dropped connection or read timeout surfaces here instead,
+            # and used to lose the page outright. A broken stream is the
+            # same kind of "come back shortly" as a 429, so it retries
+            # too — just without the 429's long backoff, since nothing
+            # about a dropped socket needs a rate-limit window to pass.
+            is_broken_stream = any(s in str(exc).lower() for s in (
+                "connection", "timeout", "timed out", "incomplete", "peer"))
+            code = getattr(exc, "status_code", None)
+            is_server_error = isinstance(code, int) and 500 <= code < 600
+
+            if not (is_rate_limited or is_broken_stream or is_server_error):
                 raise
-            # The cap is per minute, so waiting out most of a window is the
-            # only thing that actually helps; a few hundred ms of backoff
-            # would just burn another attempt.
-            time.sleep(min(20.0 * (attempt + 1), 60.0))
+            if attempt == RATE_LIMIT_RETRIES:
+                raise
+            if is_rate_limited:
+                # The cap is per minute, so waiting out most of a window is
+                # the only thing that actually helps; a few hundred ms of
+                # backoff would just burn another attempt.
+                time.sleep(min(20.0 * (attempt + 1), 60.0))
+            else:
+                time.sleep(min(1.5 * (attempt + 1), 5.0))
     raise RuntimeError("unreachable")  # loop either returns or raises
