@@ -127,10 +127,16 @@ set is still on the list.)
 | `meta-llama/llama-4-maverick` | Yes | 80.3% | 0 | 4.5 / 10 |
 | `z-ai/glm-5.3-flash` | Yes | — | — | empty responses on every page |
 
-The closed reference still leads on understandability (8.5 vs 7.2).
-Targeted prompt work closed roughly half to two-thirds of that gap
-without costing fidelity, A/B'd three runs per arm because a single run
-on that metric was shown to be actively misleading.
+The closed reference still leads on understandability, and prompt work
+narrowed it rather than closing it: teaching went **6.5 → 7.5** against
+the reference's 8.5, A/B'd three runs per arm because a single run on
+that metric was shown to be actively misleading. Fidelity was unchanged.
+
+Those are different runs from the table above, which is one benchmark
+scoring all eight models identically — worth keeping internally
+comparable rather than patching one row with a number the others were
+never measured against. On the current 25-page set the same model scores
+7.1. Full A/B, including what refused to move: `eval/README.md`.
 
 ### Three bugs the eval caught
 
