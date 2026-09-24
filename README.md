@@ -167,39 +167,6 @@ python eval/run_page_eval.py --models deepseek/deepseek-v4.1-flash
 Full methodology and every candidate ruled out: `eval/README.md` and
 `eval/tasks/README.md`.
 
-## Latency
-
-What matters is time to first token, and that isn't one number. It's
-queueing for a free worker, plus page classification, plus rate-limit
-throttling, plus the model call. Each is timed where it happens and
-logged separately, so a slow page points at a cause instead of a
-mystery.
-
-![Time to first token, by component](eval/observability/ttft_breakdown.png)
-
-The model returns its first token in under 20ms. What the first
-production run caught instead was a cold start: a fresh worker spinning up after a deploy adds
-several seconds before a page is even claimed, dropping to ~1.3s once
-warm. So latency work here belongs in container warm-up and scheduling,
-which is not where anyone would have looked first.
-
-### What actually moves it
-
-![Latency vs. token counts](eval/observability/latency_vs_tokens.png)
-
-Time to first token barely moves with input size. Total time tracks
-**output** length almost perfectly: ~11.7ms per output token (10.8–12.3,
-r = +0.99). Input size correlates too (r = +0.88) but that's confounded,
-since a longer source page produces a longer rewrite and it's the
-rewrite that costs the time.
-
-That's a real tension for this product. The prompt deliberately makes
-rewrites longer than their source, because explaining a term takes more
-words than using it. Output length is the latency lever, and pulling it
-costs exactly the thing the product exists to do. A decision to take
-deliberately, not an optimisation to apply blindly. Details:
-`eval/observability/README.md`.
-
 ## Architecture
 
 | Component | Tech | Role |
@@ -235,7 +202,8 @@ Every job gets one ID, threaded through every log line it produces:
 classification, the model call, the database write. Structured JSON on
 stdout, which Cloud Run picks up as Cloud Logging entries. Filter on
 that one ID and you get the whole sequence in order, not just the
-result. Those same lines feed the latency metrics above.
+result. The same lines carry per-stage timings, which feed Cloud
+Monitoring metrics declared in `infra/terraform/metrics.tf`.
 
 ## Repo structure
 
@@ -244,7 +212,7 @@ services/api/     FastAPI: job creation, progress, finished document
 services/worker/  Claims queued pages, makes the rewrite call
 prompts/writer/   One prompt per page type, plus the shared base
 eval/tasks/       One folder per task: real pages and scoring factors
-eval/observability/  Latency analysis and the charts above
+eval/observability/  Latency instrumentation and offline analysis
 infra/terraform/  Cloud SQL, Cloud Run, IAM, secrets, metrics
 infra/sql/        Postgres schema
 ```
