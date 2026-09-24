@@ -111,10 +111,28 @@ class EvalAborted(RuntimeError):
     """Run-wide, unrecoverable — no point continuing to spend on calls."""
 
 
+# Not every 402 means the balance is empty. OpenRouter also returns one
+# when too many requests are in flight at once, each reserving its
+# worst-case cost against a balance that the real spend never approaches
+# ("in_flight_budget_exhausted", which ships its own Retry-After). That
+# one is transient and the documented remedy is to retry — treating it as
+# terminal aborted whole runs on funded accounts. Same distinction as
+# services/worker/llm.py makes in production.
+_IN_FLIGHT_MARKERS = ("in_flight_budget_exhausted", "openrouter_in_flight_budget",
+                      "in-flight request")
+
+
+def _is_in_flight_budget(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _IN_FLIGHT_MARKERS)
+
+
 def _is_insufficient_credits(exc: Exception) -> bool:
     # status_code is set from the real HTTP response for every
     # APIStatusError, 402 included even though the SDK gives it no named
     # subclass. Reading it is exact; matching provider message text is not.
+    if _is_in_flight_budget(exc):
+        return False
     if getattr(exc, "status_code", None) == 402:
         return True
     text = str(exc).lower()
@@ -122,6 +140,8 @@ def _is_insufficient_credits(exc: Exception) -> bool:
 
 
 def _is_retryable(exc: Exception) -> bool:
+    if _is_in_flight_budget(exc):
+        return True
     code = getattr(exc, "status_code", None)
     if code == 429 or (isinstance(code, int) and 500 <= code < 600):
         return True

@@ -27,6 +27,7 @@ went from as many as 9 calls per page to exactly 1.
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -189,6 +190,61 @@ _credits_lock = threading.Lock()
 _credits_exhausted_until = 0.0
 
 
+# OpenRouter returns 402 for two situations that need opposite responses,
+# and treating them identically is what told a funded account it was out
+# of money:
+#
+#   in_flight_budget_exhausted — too many requests in flight at once, each
+#       reserving its worst-case cost (max_tokens x price) against the
+#       balance. The money is there; it's spoken for until the in-flight
+#       calls settle. The error says so itself and ships a Retry-After.
+#       Transient. Retrying is the documented remedy.
+#
+#   anything else 402 — the balance really is empty, and every subsequent
+#       call fails the same way until a human adds funds. Terminal.
+#
+# Getting this wrong was expensive in both directions: pages died that
+# would have succeeded seconds later, and the reader was told to go add
+# credits it already had.
+_IN_FLIGHT_MARKERS = ("in_flight_budget_exhausted", "openrouter_in_flight_budget",
+                      "in-flight request")
+# A page is worth waiting for, but not for the full Retry-After of 120s
+# times several attempts — that stalls a worker lane long enough to look
+# hung. Wait what's asked, capped.
+MAX_IN_FLIGHT_WAIT_SECONDS = 30.0
+
+
+def _is_in_flight_budget(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _IN_FLIGHT_MARKERS)
+
+
+def _retry_after_seconds(exc: Exception, default: float) -> float:
+    """Honours the server's own Retry-After when it sends one."""
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    if headers:
+        raw = headers.get("Retry-After") or headers.get("retry-after")
+        if raw:
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                pass
+    # OpenRouter also echoes the header into the JSON error body, which is
+    # all that survives once the SDK stringifies the exception.
+    match = re.search(r"'Retry-After':\s*'?(\d+)'?", str(exc))
+    return float(match.group(1)) if match else default
+
+
+# Caps how many writer calls are in flight at once, which is what actually
+# provokes in_flight_budget_exhausted: 8 lanes each reserving worst-case
+# cost can exceed a balance that the real spend never comes close to.
+# Lower than CONCURRENT_WORKERS on purpose, and env-tunable — raise it if
+# the account's in-flight ceiling is comfortable, lower it if these still
+# appear.
+MAX_IN_FLIGHT = int(os.environ.get("WRITER_MAX_IN_FLIGHT", "4"))
+_in_flight = threading.Semaphore(MAX_IN_FLIGHT)
+
+
 def _credits_likely_exhausted() -> bool:
     with _credits_lock:
         return time.monotonic() < _credits_exhausted_until
@@ -300,8 +356,9 @@ def call_writer(client: OpenAI, original_text: str, task: str) -> tuple[str, Wri
     for attempt in range(RATE_LIMIT_RETRIES + 1):
         throttle_wait_ms = _throttle()
         try:
-            stream = _create(client, messages)
-            rewrite, ttft_ms, total_ms, finish_reason, usage = _consume_stream(stream)
+            with _in_flight:
+                stream = _create(client, messages)
+                rewrite, ttft_ms, total_ms, finish_reason, usage = _consume_stream(stream)
             timing = WriterTiming(
                 throttle_wait_ms=throttle_wait_ms, ttft_ms=ttft_ms, total_ms=total_ms,
                 input_tokens=getattr(usage, "prompt_tokens", None),
@@ -325,6 +382,19 @@ def call_writer(client: OpenAI, original_text: str, task: str) -> tuple[str, Wri
             # request would exceed your available credits...") that isn't
             # guaranteed stable.
             if getattr(exc, "status_code", None) == 402:
+                if _is_in_flight_budget(exc):
+                    # Funds exist, they're just reserved by calls already
+                    # running. Never trip the credits cooldown for this —
+                    # doing so made one collision cascade into every lane
+                    # reporting "out of credits" for the next 45 seconds.
+                    if attempt == RATE_LIMIT_RETRIES:
+                        raise
+                    wait = min(_retry_after_seconds(exc, 10.0), MAX_IN_FLIGHT_WAIT_SECONDS)
+                    log("llm_in_flight_budget_retry", severity="WARNING",
+                        model=WRITER_MODEL, task=task, wait_seconds=wait,
+                        attempt=attempt + 1)
+                    time.sleep(wait)
+                    continue
                 _mark_credits_exhausted()
                 raise InsufficientCreditsError(str(exc)) from exc
 
