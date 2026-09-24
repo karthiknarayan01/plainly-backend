@@ -36,7 +36,7 @@ which is the point.
 
 ## What came out of it
 
-**An open-weight model matched the closed frontier one, for 17x less.**
+An open-weight model matched the closed frontier one, for 17x less.
 Benchmarked head to head on real pages, `deepseek-v4.1-flash` tied
 Claude Sonnet 5 on fidelity (100% of figures preserved) and beat it on
 fabrication: the closed model invented three company names on a page
@@ -44,21 +44,6 @@ that never mentioned them, the open one invented nothing anywhere. At
 list pricing that's ~17x less per output token, which matters when a
 faithful rewrite is longer than its source and a book runs to hundreds
 of pages.
-
-**The evaluation found three real bugs, one of them in production.**
-None were model failures. A contents-page detector that silently missed
-any table of contents without page numbers, plus two scoring bugs that
-had been quietly penalising every model for doing the right thing.
-
-**The model was never the slow part.** Instrumenting each stage
-separately showed first-token latency sitting under 20ms, while a cold
-worker added ten seconds of queueing. Optimisation effort goes to
-container warm-up, not prompts.
-
-**Quality is measured, not asserted.** 25 real pages, four scored
-dimensions, most of it computed in code rather than asked of a judge
-model. Latest run on the open-weight candidate: 98.2% figure recall,
-zero fabrications, 4/4 contents pages correctly left empty.
 
 ## How it works
 
